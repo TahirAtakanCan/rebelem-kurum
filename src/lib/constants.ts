@@ -1,4 +1,13 @@
-import { KurumTipi, Durum, SatisDurumu, Oncelik } from "./types";
+import {
+  KurumTipi,
+  Durum,
+  SatisDurumu,
+  Oncelik,
+  RandevuTipi,
+  RandevuDurum,
+  TahsilatDurumu,
+  DevamEdenIliski,
+} from "./types";
 
 export const KURUM_TIPLERI: KurumTipi[] = ["Okul", "Kurs", "Bireysel", "Akademi"];
 
@@ -47,4 +56,62 @@ export const KURUM_TIPI_RENKLERI: Record<KurumTipi, string> = {
   "Kurs": "bg-orange-100 text-orange-800",
   "Bireysel": "bg-pink-100 text-pink-800",
   "Akademi": "bg-purple-100 text-purple-800",
+};
+
+export const RANDEVU_TIPLERI: RandevuTipi[] = [
+  "Yüz Yüze",
+  "Online",
+  "Telefon",
+  "Saha Ziyareti",
+];
+
+export const RANDEVU_DURUMLARI: RandevuDurum[] = [
+  "Planlandı",
+  "Onaylandı",
+  "İptal",
+  "Tamamlandı",
+  "Ertelendi",
+];
+
+export const RANDEVU_TIPI_RENKLERI: Record<RandevuTipi, string> = {
+  "Yüz Yüze": "bg-blue-100 text-blue-800",
+  "Online": "bg-purple-100 text-purple-800",
+  "Telefon": "bg-orange-100 text-orange-800",
+  "Saha Ziyareti": "bg-green-100 text-green-800",
+};
+
+export const RANDEVU_DURUM_RENKLERI: Record<RandevuDurum, string> = {
+  "Planlandı": "bg-blue-100 text-blue-800 border-blue-200",
+  "Onaylandı": "bg-green-100 text-green-800 border-green-200",
+  "İptal": "bg-red-100 text-red-800 border-red-200",
+  "Tamamlandı": "bg-gray-100 text-gray-800 border-gray-200",
+  "Ertelendi": "bg-yellow-100 text-yellow-800 border-yellow-200",
+};
+
+export const TAHSILAT_DURUMLARI: TahsilatDurumu[] = [
+  "Tahsil Edildi",
+  "Beklemede",
+  "Gecikmiş",
+  "Faturalandı",
+];
+
+export const DEVAM_EDEN_ILISKILER: DevamEdenIliski[] = [
+  "Aktif",
+  "Pasif",
+  "Yenilenecek",
+  "Bitti",
+];
+
+export const TAHSILAT_RENKLERI: Record<TahsilatDurumu, string> = {
+  "Tahsil Edildi": "bg-green-100 text-green-800 border-green-200",
+  "Beklemede": "bg-yellow-100 text-yellow-800 border-yellow-200",
+  "Gecikmiş": "bg-red-100 text-red-800 border-red-200",
+  "Faturalandı": "bg-blue-100 text-blue-800 border-blue-200",
+};
+
+export const ILISKI_RENKLERI: Record<DevamEdenIliski, string> = {
+  "Aktif": "bg-green-100 text-green-800 border-green-200",
+  "Pasif": "bg-gray-100 text-gray-800 border-gray-200",
+  "Yenilenecek": "bg-orange-100 text-orange-800 border-orange-200",
+  "Bitti": "bg-red-100 text-red-800 border-red-200",
 };
