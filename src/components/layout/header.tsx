@@ -21,8 +21,10 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   if (!user) return null;
 
-  const initials = user.displayName
-    ? user.displayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+  const displayName = user.displayName || user.email?.split("@")[0] || "Kullanıcı";
+
+  const initials = displayName
+    ? displayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : user.email?.[0].toUpperCase() || "?";
 
   return (
@@ -48,14 +50,14 @@ export function Header({ onMenuClick }: HeaderProps) {
               {initials}
             </div>
             <span className="hidden max-w-[140px] truncate text-sm sm:inline md:max-w-[200px]">
-              {user.displayName}
+              {displayName}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>
             <div className="flex flex-col">
-              <span className="font-medium">{user.displayName}</span>
+              <span className="font-medium">{displayName}</span>
               <span className="text-xs font-normal text-muted-foreground">
                 {user.email}
               </span>
