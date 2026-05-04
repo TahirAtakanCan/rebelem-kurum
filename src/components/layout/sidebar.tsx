@@ -17,26 +17,29 @@ const menuItems = [
   { href: "/egitimler", label: "Eğitimler", icon: GraduationCap },
 ];
 
-export function Sidebar() {
+/** Mobil sheet ve masaüstü sidebar için ortak menü */
+export function SidebarNav({ onLinkClick }: { onLinkClick?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-white border-r min-h-screen flex flex-col">
-      {/* Logo */}
-      <div className="p-6 border-b">
-        <Link href="/gorusmeler" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-900 flex items-center justify-center text-white font-bold text-lg">
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
+      <div className="shrink-0 border-b p-6">
+        <Link
+          href="/gorusmeler"
+          className="flex items-center gap-3"
+          onClick={onLinkClick}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-900 text-lg font-bold text-white">
             R
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="font-bold leading-tight">ReBelem</div>
             <div className="text-xs text-muted-foreground">Rehberlik</div>
           </div>
         </Link>
       </div>
 
-      {/* Menu */}
-      <nav className="flex-1 p-3 space-y-1">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
@@ -44,19 +47,29 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onLinkClick}
               className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition",
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
                 isActive
                   ? "bg-purple-100 text-purple-900"
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              <Icon className="w-5 h-5" />
+              <Icon className="h-5 w-5 shrink-0" />
               {item.label}
             </Link>
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+/** Masaüstü: sabit sol sidebar */
+export function DesktopSidebar() {
+  return (
+    <aside className="hidden min-h-screen w-64 shrink-0 border-r bg-white md:flex md:flex-col">
+      <SidebarNav />
     </aside>
   );
 }

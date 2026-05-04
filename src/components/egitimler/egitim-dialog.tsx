@@ -128,13 +128,13 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{egitim ? "Eğitimi Düzenle" : "Yeni Eğitim Ekle"}</DialogTitle>
           <DialogDescription>Verilen eğitimin detaylarını girin.</DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4 py-4">
+        <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="tarih">Tarih *</Label>
             <Input
@@ -154,7 +154,7 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
             />
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="kurum">Kurum *</Label>
             <Input
               id="kurum"
@@ -163,7 +163,7 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
             />
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="egitimKonusu">Eğitim Konusu *</Label>
             <Input
               id="egitimKonusu"
@@ -260,7 +260,7 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
             </Select>
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="notlar">Notlar</Label>
             <Textarea
               id="notlar"

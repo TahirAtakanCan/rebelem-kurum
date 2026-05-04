@@ -125,7 +125,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {randevu ? "Randevuyu Düzenle" : "Yeni Randevu Ekle"}
@@ -135,7 +135,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4 py-4">
+        <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="tarih">Tarih *</Label>
             <Input
@@ -183,7 +183,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
             />
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="kurum">Kurum *</Label>
             <Input
               id="kurum"
@@ -219,7 +219,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
             </Select>
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="konumLink">Konum / Link</Label>
             <Input
               id="konumLink"
@@ -229,7 +229,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
             />
           </div>
 
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="notlar">Notlar</Label>
             <Textarea
               id="notlar"

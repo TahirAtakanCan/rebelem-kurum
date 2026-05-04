@@ -154,7 +154,7 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
             {gorusme ? "Görüşmeyi Düzenle" : "Yeni Görüşme Ekle"}
@@ -164,9 +164,9 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4 py-4">
+        <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
           {/* Kurum */}
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="kurum">Kurum Adı *</Label>
             <Input
               id="kurum"
@@ -356,7 +356,7 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
           </div>
 
           {/* Not */}
-          <div className="col-span-2 space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="not">Not</Label>
             <Textarea
               id="not"

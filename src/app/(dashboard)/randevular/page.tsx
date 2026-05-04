@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -38,6 +39,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
 import { format, isToday, isThisWeek, isPast } from "date-fns";
 import { tr } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 export default function RandevularPage() {
   const { user } = useAuth();
@@ -100,25 +102,38 @@ export default function RandevularPage() {
     return "hover:bg-purple-50/50";
   };
 
+  const getCardClass = (r: Randevu) => {
+    const date = r.tarih.toDate();
+    if (isToday(date)) return "border-yellow-200 bg-yellow-50";
+    if (isPast(date) && r.durum !== "Tamamlandı" && r.durum !== "İptal")
+      return "opacity-90";
+    if (isThisWeek(date, { weekStartsOn: 1 })) return "border-blue-200 bg-blue-50/50";
+    return "";
+  };
+
+  const emptyMessage = search
+    ? "Sonuç yok"
+    : "Henüz randevu yok. Yukarıdan ekleyebilirsin.";
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Randevular</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Randevular</h1>
           <p className="text-muted-foreground">
             Bugün: <span className="font-semibold text-yellow-700">{bugun}</span> · Bu hafta:{" "}
             <span className="font-semibold text-blue-700">{buHafta}</span> · Toplam:{" "}
             {randevular.length}
           </p>
         </div>
-        <Button onClick={handleNew} size="lg">
-          <Plus className="w-4 h-4 mr-2" />
+        <Button onClick={handleNew} size="lg" className="w-full shrink-0 sm:w-auto">
+          <Plus className="mr-2 h-4 w-4" />
           Yeni Randevu
         </Button>
       </div>
 
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Kurum, kişi, not ara..."
           value={search}
@@ -127,38 +142,38 @@ export default function RandevularPage() {
         />
       </div>
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border bg-white md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-blue-700">
-              <TableRow className="hover:bg-blue-700 border-b-0">
-                <TableHead className="text-white font-semibold">Tarih</TableHead>
-                <TableHead className="text-white font-semibold">Saat</TableHead>
-                <TableHead className="text-white font-semibold">Kurum</TableHead>
-                <TableHead className="text-white font-semibold">İlgili Kişi</TableHead>
-                <TableHead className="text-white font-semibold">Tip</TableHead>
-                <TableHead className="text-white font-semibold">Konum/Link</TableHead>
-                <TableHead className="text-white font-semibold">Durum</TableHead>
-                <TableHead className="text-white font-semibold">Takvime Ekle</TableHead>
-                <TableHead className="text-white font-semibold w-12"></TableHead>
+              <TableRow className="border-b-0 hover:bg-blue-700">
+                <TableHead className="font-semibold text-white">Tarih</TableHead>
+                <TableHead className="font-semibold text-white">Saat</TableHead>
+                <TableHead className="font-semibold text-white">Kurum</TableHead>
+                <TableHead className="font-semibold text-white">İlgili Kişi</TableHead>
+                <TableHead className="font-semibold text-white">Tip</TableHead>
+                <TableHead className="font-semibold text-white">Konum/Link</TableHead>
+                <TableHead className="font-semibold text-white">Durum</TableHead>
+                <TableHead className="font-semibold text-white">Takvime Ekle</TableHead>
+                <TableHead className="w-12 font-semibold text-white"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
                     Yükleniyor...
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                    {search ? "Sonuç yok" : "Henüz randevu yok. Yukarıdan ekleyebilirsin."}
+                  <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((r) => (
-                  <TableRow key={r.id} className={`cursor-pointer ${getRowClass(r)}`} onClick={() => handleEdit(r)}>
+                  <TableRow key={r.id} className={cn("cursor-pointer", getRowClass(r))} onClick={() => handleEdit(r)}>
                     <TableCell className="font-medium">
                       {format(r.tarih.toDate(), "dd.MM.yyyy EEE", { locale: tr })}
                     </TableCell>
@@ -192,7 +207,7 @@ export default function RandevularPage() {
                           window.open(buildGoogleCalendarUrl(r), "_blank")
                         }
                       >
-                        <CalendarPlus className="w-4 h-4 mr-1" />
+                        <CalendarPlus className="mr-1 h-4 w-4" />
                         Ekle
                       </Button>
                     </TableCell>
@@ -200,16 +215,16 @@ export default function RandevularPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreVertical className="w-4 h-4" />
+                            <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(r)}>
-                            <Pencil className="w-4 h-4 mr-2" />
+                            <Pencil className="mr-2 h-4 w-4" />
                             Düzenle
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r)}>
-                            <Trash2 className="w-4 h-4 mr-2" />
+                            <Trash2 className="mr-2 h-4 w-4" />
                             Sil
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -221,6 +236,82 @@ export default function RandevularPage() {
             </TableBody>
           </Table>
         </div>
+      </div>
+
+      <div className="space-y-3 md:hidden">
+        {loading ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              Yükleniyor...
+            </CardContent>
+          </Card>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              {emptyMessage}
+            </CardContent>
+          </Card>
+        ) : (
+          filtered.map((r) => (
+            <Card
+              key={r.id}
+              className={cn("cursor-pointer border", getCardClass(r))}
+              onClick={() => handleEdit(r)}
+            >
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-muted-foreground">
+                      {format(r.tarih.toDate(), "dd.MM.yyyy EEE", { locale: tr })}
+                    </div>
+                    <div className="font-mono text-base font-semibold">
+                      {r.baslangicSaati} – {r.bitisSaati}
+                    </div>
+                    <div className="mt-1 font-semibold leading-snug">{r.kurum}</div>
+                  </div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(r)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Düzenle
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Sil
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                {r.ilgiliKisi && (
+                  <div className="text-sm text-muted-foreground">{r.ilgiliKisi}</div>
+                )}
+                {r.durum && (
+                  <Badge variant="outline" className={RANDEVU_DURUM_RENKLERI[r.durum]}>
+                    {r.durum}
+                  </Badge>
+                )}
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => window.open(buildGoogleCalendarUrl(r), "_blank")}
+                  >
+                    <CalendarPlus className="mr-2 h-4 w-4" />
+                    Takvime Ekle
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <RandevuDialog

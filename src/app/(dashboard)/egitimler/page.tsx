@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -70,11 +71,18 @@ export default function EgitimlerPage() {
     }
   };
 
+  const openEdit = (e: Egitim) => {
+    setEditing(e);
+    setDialogOpen(true);
+  };
+
+  const emptyMessage = search ? "Sonuç yok" : "Henüz eğitim yok.";
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Eğitimler</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Eğitimler</h1>
           <p className="text-muted-foreground">
             {egitimler.length} eğitim · Ciro:{" "}
             <span className="font-semibold text-green-700">
@@ -92,14 +100,15 @@ export default function EgitimlerPage() {
             setDialogOpen(true);
           }}
           size="lg"
+          className="w-full shrink-0 sm:w-auto"
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className="mr-2 h-4 w-4" />
           Yeni Eğitim
         </Button>
       </div>
 
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Kurum, konu, eğitmen ara..."
           value={search}
@@ -108,35 +117,35 @@ export default function EgitimlerPage() {
         />
       </div>
 
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border bg-white md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-green-700">
-              <TableRow className="hover:bg-green-700 border-b-0">
-                <TableHead className="text-white font-semibold">Tarih</TableHead>
-                <TableHead className="text-white font-semibold">Kurum</TableHead>
-                <TableHead className="text-white font-semibold">Konu</TableHead>
-                <TableHead className="text-white font-semibold">Eğitmen</TableHead>
-                <TableHead className="text-white font-semibold text-right">Katılımcı</TableHead>
-                <TableHead className="text-white font-semibold text-right">Saat</TableHead>
-                <TableHead className="text-white font-semibold text-right">Ücret</TableHead>
-                <TableHead className="text-white font-semibold">Tahsilat</TableHead>
-                <TableHead className="text-white font-semibold">Geri Bildirim</TableHead>
-                <TableHead className="text-white font-semibold">İlişki</TableHead>
-                <TableHead className="text-white font-semibold w-12"></TableHead>
+              <TableRow className="border-b-0 hover:bg-green-700">
+                <TableHead className="font-semibold text-white">Tarih</TableHead>
+                <TableHead className="font-semibold text-white">Kurum</TableHead>
+                <TableHead className="font-semibold text-white">Konu</TableHead>
+                <TableHead className="font-semibold text-white">Eğitmen</TableHead>
+                <TableHead className="text-right font-semibold text-white">Katılımcı</TableHead>
+                <TableHead className="text-right font-semibold text-white">Saat</TableHead>
+                <TableHead className="text-right font-semibold text-white">Ücret</TableHead>
+                <TableHead className="font-semibold text-white">Tahsilat</TableHead>
+                <TableHead className="font-semibold text-white">Geri Bildirim</TableHead>
+                <TableHead className="font-semibold text-white">İlişki</TableHead>
+                <TableHead className="w-12 font-semibold text-white"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={11} className="py-12 text-center text-muted-foreground">
                     Yükleniyor...
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
-                    {search ? "Sonuç yok" : "Henüz eğitim yok."}
+                  <TableCell colSpan={11} className="py-12 text-center text-muted-foreground">
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -144,10 +153,7 @@ export default function EgitimlerPage() {
                   <TableRow
                     key={e.id}
                     className="cursor-pointer hover:bg-green-50/50"
-                    onClick={() => {
-                      setEditing(e);
-                      setDialogOpen(true);
-                    }}
+                    onClick={() => openEdit(e)}
                   >
                     <TableCell className="font-medium">
                       {format(e.tarih.toDate(), "dd.MM.yyyy", { locale: tr })}
@@ -181,21 +187,16 @@ export default function EgitimlerPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreVertical className="w-4 h-4" />
+                            <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditing(e);
-                              setDialogOpen(true);
-                            }}
-                          >
-                            <Pencil className="w-4 h-4 mr-2" />
+                          <DropdownMenuItem onClick={() => openEdit(e)}>
+                            <Pencil className="mr-2 h-4 w-4" />
                             Düzenle
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(e)}>
-                            <Trash2 className="w-4 h-4 mr-2" />
+                            <Trash2 className="mr-2 h-4 w-4" />
                             Sil
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -207,6 +208,73 @@ export default function EgitimlerPage() {
             </TableBody>
           </Table>
         </div>
+      </div>
+
+      <div className="space-y-3 md:hidden">
+        {loading ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              Yükleniyor...
+            </CardContent>
+          </Card>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              {emptyMessage}
+            </CardContent>
+          </Card>
+        ) : (
+          filtered.map((e) => (
+            <Card
+              key={e.id}
+              className="cursor-pointer border transition-shadow active:shadow-md"
+              onClick={() => openEdit(e)}
+            >
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-muted-foreground">
+                      {format(e.tarih.toDate(), "dd.MM.yyyy", { locale: tr })}
+                    </div>
+                    <div className="font-semibold leading-snug">{e.kurum}</div>
+                    <div className="mt-1 text-sm leading-snug">{e.egitimKonusu}</div>
+                  </div>
+                  <div onClick={(ev) => ev.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(e)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Düzenle
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(e)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Sil
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {e.ucret != null && e.ucret > 0 && (
+                    <span className="font-mono text-sm font-medium">
+                      ₺{e.ucret.toLocaleString("tr-TR")}
+                    </span>
+                  )}
+                  {e.tahsilatDurumu && (
+                    <Badge variant="outline" className={TAHSILAT_RENKLERI[e.tahsilatDurumu]}>
+                      {e.tahsilatDurumu}
+                    </Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <EgitimDialog open={dialogOpen} onOpenChange={setDialogOpen} egitim={editing} />

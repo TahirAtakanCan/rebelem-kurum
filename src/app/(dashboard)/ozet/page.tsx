@@ -72,7 +72,7 @@ export default function OzetPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Özet Panel</h1>
+        <h1 className="text-2xl font-bold md:text-3xl">Özet Panel</h1>
         <p className="text-muted-foreground">Genel durum özeti</p>
       </div>
 
@@ -222,12 +222,20 @@ function StatCard({
 }) {
   return (
     <Card className={`${colorClasses[color]} border`}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium opacity-80">{label}</CardTitle>
-        <div className="opacity-70">{icon}</div>
+      <CardHeader className="flex flex-col gap-1 pb-2 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+        <CardTitle className="min-w-0 truncate text-xs font-medium whitespace-nowrap opacity-80 sm:pr-2 md:text-sm">
+          {label}
+        </CardTitle>
+        <div className="hidden shrink-0 opacity-70 sm:flex sm:items-center">{icon}</div>
       </CardHeader>
-      <CardContent>
-        <div className={big ? "text-4xl font-bold" : "text-2xl font-bold"}>
+      <CardContent className="pt-0">
+        <div
+          className={
+            big
+              ? "text-3xl font-bold md:text-4xl"
+              : "text-xl font-bold md:text-2xl"
+          }
+        >
           {value}
         </div>
       </CardContent>
