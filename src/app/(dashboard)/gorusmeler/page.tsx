@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,7 @@ import {
   milestoneProgressLabel,
 } from "@/lib/kurum-helpers";
 import { exportGorusmelerToCsv } from "@/lib/export-gorusmeler";
+import { gorusmeMatchesSearch } from "@/lib/search";
 
 const SATIS_FILTER_ALL = "all";
 
@@ -69,6 +70,7 @@ export default function GorusmelerPage() {
   const [gorusmeler, setGorusmeler] = useState<Gorusme[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDeferredValue(search.trim());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGorusme, setEditingGorusme] = useState<Gorusme | null>(null);
 
@@ -132,27 +134,12 @@ export default function GorusmelerPage() {
         if (g.satisDurumu !== satisFilter) return false;
       }
 
-      if (!search.trim()) return true;
-      const s = search.toLowerCase();
-      const name = getKurumDisplayName(g).toLowerCase();
-      const pooled = [
-        name,
-        g.sehir?.toLowerCase(),
-        g.ilce?.toLowerCase(),
-        g.ilgiliKisi?.toLowerCase(),
-        getAnaKisiAd(g).toLowerCase(),
-        g.iletisimNo,
-        getAnaKisiTelefon(g),
-        g.mail?.toLowerCase(),
-        ...(g.etiketler || []).map((t) => t.toLowerCase()),
-      ]
-        .filter(Boolean)
-        .join(" ");
-      return pooled.includes(s) || pooled.split(/\s/).some((w) => w.includes(s));
+      if (!debouncedSearch) return true;
+      return gorusmeMatchesSearch(g, debouncedSearch);
     });
   }, [
     gorusmeler,
-    search,
+    debouncedSearch,
     sehirFilter,
     kurumDurumFilter,
     etiketFilter,
@@ -606,7 +593,12 @@ export default function GorusmelerPage() {
         )}
       </div>
 
-      <GorusmeDialog open={dialogOpen} onOpenChange={setDialogOpen} gorusme={editingGorusme} />
+      <GorusmeDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        gorusme={editingGorusme}
+        allKurumlar={gorusmeler}
+      />
     </div>
   );
 }

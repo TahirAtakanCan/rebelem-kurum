@@ -20,7 +20,7 @@ import {
 } from "@/lib/types";
 import { subscribeRandevular } from "@/lib/randevular";
 import { subscribeEgitimler } from "@/lib/egitimler";
-import { updateGorusme } from "@/lib/gorusmeler";
+import { subscribeGorusmeler, updateGorusme } from "@/lib/gorusmeler";
 import { deleteGorev, subscribeGorevler, toggleGorevDurum } from "@/lib/gorevler";
 import {
   addKurumNotu,
@@ -72,6 +72,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { socialHref } from "@/lib/format";
 import { GorusmeDialog } from "@/components/gorusmeler/gorusme-dialog";
 import { RandevuDialog } from "@/components/randevular/randevu-dialog";
 import { EgitimDialog } from "@/components/egitimler/egitim-dialog";
@@ -112,6 +113,10 @@ export default function KurumDetayPage() {
 
   const [gorevler, setGorevler] = useState<Gorev[]>([]);
   const [loadingGorevler, setLoadingGorevler] = useState(true);
+
+  const [allGorusmelerForDup, setAllGorusmelerForDup] = useState<Gorusme[]>(
+    []
+  );
 
   const [milestoneNoteOpen, setMilestoneNoteOpen] = useState(false);
   const [milestoneNoteTip, setMilestoneNoteTip] = useState<MilestoneTipi | null>(null);
@@ -180,6 +185,12 @@ export default function KurumDetayPage() {
       setGorevler(data);
       setLoadingGorevler(false);
     });
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeGorusmeler((data) => setAllGorusmelerForDup(data));
     return () => unsub();
   }, [user]);
 
@@ -468,9 +479,9 @@ export default function KurumDetayPage() {
               </CardHeader>
               <CardContent className="grid gap-4 text-sm md:grid-cols-2">
                 <LinkMaybe label="Web" href={gorusme.webSitesi} />
-                <LinkMaybe label="Instagram" href={gorusme.instagram} ig />
-                <LinkMaybe label="Facebook" href={gorusme.facebook} />
-                <LinkMaybe label="LinkedIn" href={gorusme.linkedin} />
+                <LinkMaybe label="Instagram" href={gorusme.instagram} social="instagram" />
+                <LinkMaybe label="Facebook" href={gorusme.facebook} social="facebook" />
+                <LinkMaybe label="LinkedIn" href={gorusme.linkedin} social="linkedin" />
               </CardContent>
             </Card>
 
@@ -932,6 +943,7 @@ export default function KurumDetayPage() {
           if (!open) loadGorusme();
         }}
         gorusme={gorusme}
+        allKurumlar={allGorusmelerForDup}
       />
 
       <Dialog open={milestoneNoteOpen} onOpenChange={setMilestoneNoteOpen}>
@@ -986,21 +998,20 @@ export default function KurumDetayPage() {
 function LinkMaybe({
   label,
   href,
-  ig,
+  social,
 }: {
   label: string;
   href?: string;
-  ig?: boolean;
+  social?: "instagram" | "facebook" | "linkedin";
 }) {
   const raw = href?.trim();
   if (!raw) return <InfoItem label={label} value="-" />;
-  const lower = raw.toLowerCase();
-  let url = raw;
-  if (!lower.startsWith("http")) {
-    url = ig
-      ? `https://instagram.com/${raw.replace(/^@/, "")}`
+  const url = social
+    ? socialHref(raw, social)
+    : raw.toLowerCase().startsWith("http")
+      ? raw
       : `https://${raw}`;
-  }
+  if (!url) return <InfoItem label={label} value="-" />;
   return (
     <div className="space-y-1 md:col-span-1">
       <div className="text-xs uppercase text-muted-foreground">{label}</div>

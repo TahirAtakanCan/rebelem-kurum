@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import {
   Dialog,
@@ -27,6 +34,7 @@ import type {
   Gorusme,
   KurumDurumu,
   KurumKisi,
+  KurumMilestone,
   KurumTipi,
   SatisDurumu,
 } from "@/lib/types";
@@ -43,10 +51,23 @@ import {
   buildGorusmeSyncPayload,
   initialKisilerFromGorusme,
   kurumDurumuToSatis,
+  mergeMilestones,
 } from "@/lib/kurum-helpers";
 import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { StringCombobox } from "@/components/gorusmeler/string-combobox";
+import { ILLER_ADLARI, getIlcelerForIl } from "@/lib/turkiye-iller";
+import {
+  formatPhone,
+  normalizeSocialForStore,
+} from "@/lib/format";
+import { findDuplicateKurumCandidate, normalizeText } from "@/lib/search";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 
 const EMPTY_KT = "__empty_kt__";
 const EMPTY_KD = "__empty_kd__";
@@ -55,17 +76,61 @@ const EMPTY_IG = "__empty_ig__";
 const EMPTY_DURUM = "__empty_durum__";
 const EMPTY_SATIS = "__empty_satis__";
 
+const LS_LAST_CITY = "rebelem_lastSelectedCity";
+
+const ROL_OTHER = "Diğer";
+const ROL_QUICK_ROLES = [
+  "Müdür",
+  "Müdür Yardımcısı",
+  "Rehberlik",
+  "Genel Koordinatör",
+  "Muhasebe",
+  "Sahip",
+  ROL_OTHER,
+] as const;
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gorusme?: Gorusme | null;
+  /** Benzer ada sahip kurum uyarısı (yeni kayıt) için */
+  allKurumlar?: Gorusme[];
 }
 
 function effectiveKisiler(rows: KurumKisi[]): KurumKisi[] {
   return rows.filter((k) => k.ad.trim().length > 0);
 }
 
-export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
+function dedupeEtiketler(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of tags) {
+    const x = t.trim();
+    if (!x) continue;
+    const k = normalizeText(x);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(x);
+  }
+  return out;
+}
+
+function closeAndReset(
+  onOpenChange: (o: boolean) => void,
+  setters: { setDup: (v: Gorusme | null) => void; setPending: (v: string | null) => void }
+) {
+  setters.setDup(null);
+  setters.setPending(null);
+  onOpenChange(false);
+}
+
+export function GorusmeDialog({
+  open,
+  onOpenChange,
+  gorusme,
+  allKurumlar = [],
+}: Props) {
+  const router = useRouter();
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("temel");
@@ -75,6 +140,7 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
   const [sehir, setSehir] = useState("");
   const [ilce, setIlce] = useState("");
   const [etiketInput, setEtiketInput] = useState("");
+  const [etiketSuggestOpen, setEtiketSuggestOpen] = useState(false);
   const [tahminiDeger, setTahminiDeger] = useState("");
   const [kurumDurumu, setKurumDurumu] = useState<string>(EMPTY_KD);
   const [oncelik, setOncelik] = useState<string>(EMPTY_ON);
@@ -96,6 +162,65 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
   const [sonTemasTarihi, setSonTemasTarihi] = useState("");
   const [bitisTarihi, setBitisTarihi] = useState("");
   const [satisLegacy, setSatisLegacy] = useState(EMPTY_SATIS);
+
+  const [duplicateHit, setDuplicateHit] = useState<Gorusme | null>(null);
+  const [pendingNewId, setPendingNewId] = useState<string | null>(null);
+
+  const prevSehirRef = useRef("");
+
+  const ilceOptions = useMemo(
+    () => (sehir ? getIlcelerForIl(sehir) : []),
+    [sehir]
+  );
+
+  const allTagPool = useMemo(() => {
+    const s = new Set<string>();
+    for (const g of allKurumlar) {
+      g.etiketler?.forEach((t) => {
+        const x = t.trim();
+        if (x) s.add(x);
+      });
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [allKurumlar]);
+
+  const { tagToken, tagPrevNorm } = useMemo(() => {
+    const lastComma = etiketInput.lastIndexOf(",");
+    const leading =
+      lastComma >= 0 ? etiketInput.slice(0, lastComma + 1) : "";
+    const tail =
+      lastComma >= 0 ? etiketInput.slice(lastComma + 1) : etiketInput;
+    const token = tail.trim();
+    const prev = leading
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const prevNorm = new Set(prev.map((t) => normalizeText(t)));
+    return { tagToken: token, tagPrevNorm: prevNorm };
+  }, [etiketInput]);
+
+  const tagSuggestions = useMemo(() => {
+    const nq = normalizeText(tagToken);
+    return allTagPool
+      .filter((t) => !tagPrevNorm.has(normalizeText(t)))
+      .filter((t) => !nq || normalizeText(t).includes(nq))
+      .slice(0, 12);
+  }, [allTagPool, tagToken, tagPrevNorm]);
+
+  const applyEtiketPick = useCallback(
+    (tag: string) => {
+      const lastComma = etiketInput.lastIndexOf(",");
+      const leading =
+        lastComma >= 0 ? etiketInput.slice(0, lastComma) : "";
+      const parts = leading
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const next = [...parts, tag].join(", ");
+      setEtiketInput(`${next}, `);
+    },
+    [etiketInput]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -141,16 +266,26 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
           : ""
       );
       setSatisLegacy(gorusme.satisDurumu || EMPTY_SATIS);
+      prevSehirRef.current = gorusme.sehir || "";
     } else {
       setAd("");
       setKurumTipi(EMPTY_KT);
-      setSehir("");
+      let lastCity = "";
+      try {
+        lastCity =
+          typeof window !== "undefined"
+            ? localStorage.getItem(LS_LAST_CITY) || ""
+            : "";
+      } catch {
+        lastCity = "";
+      }
+      setSehir(lastCity && ILLER_ADLARI.includes(lastCity) ? lastCity : "");
       setIlce("");
       setEtiketInput("");
       setTahminiDeger("");
       setKurumDurumu(EMPTY_KD);
       setOncelik(EMPTY_ON);
-      setKisiler([]);
+      setKisiler([{ id: crypto.randomUUID(), ad: "" }]);
       setWebSitesi("");
       setInstagram("");
       setFacebook("");
@@ -164,9 +299,46 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
       setSonTemasTarihi("");
       setBitisTarihi("");
       setSatisLegacy(EMPTY_SATIS);
+      prevSehirRef.current =
+        lastCity && ILLER_ADLARI.includes(lastCity) ? lastCity : "";
     }
+    setDuplicateHit(null);
+    setPendingNewId(null);
     setTab("temel");
   }, [gorusme, open]);
+
+  useEffect(() => {
+    if (!open || gorusme) return;
+    const s = sehir.trim();
+    if (s && ILLER_ADLARI.includes(s)) {
+      try {
+        localStorage.setItem(LS_LAST_CITY, s);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [open, gorusme, sehir]);
+
+  useEffect(() => {
+    const prev = prevSehirRef.current;
+    if (prev === sehir) return;
+    prevSehirRef.current = sehir;
+    const list = getIlcelerForIl(sehir);
+    setIlce((cur) =>
+      cur && list.length && !list.includes(cur) ? "" : cur
+    );
+  }, [sehir]);
+
+  useEffect(() => {
+    const show =
+      etiketSuggestOpen && tagSuggestions.length > 0 && open;
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEtiketSuggestOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [etiketSuggestOpen, tagSuggestions.length, open]);
 
   const addKisiRow = () => {
     setKisiler([...kisiler, { id: crypto.randomUUID(), ad: "" }]);
@@ -182,22 +354,36 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
     setKisiler((rows) => rows.filter((r) => r.id !== id));
   };
 
-  const handleSave = async () => {
+  const runSave = async (opts: { skipDuplicateCheck: boolean }) => {
     if (!ad.trim()) {
       toast.error("Kurum adı zorunlu");
       return;
     }
     if (!user) return;
 
+    if (
+      !gorusme &&
+      !opts.skipDuplicateCheck &&
+      allKurumlar.length > 0
+    ) {
+      const hit = findDuplicateKurumCandidate(ad.trim(), allKurumlar);
+      if (hit) {
+        setDuplicateHit(hit);
+        return;
+      }
+    }
+
     const ek = effectiveKisiler(kisiler);
     if (ek.length === 0) {
       toast.warning("İletişim kişisi eklemedin; eski kişi bilgisi korunur.");
     }
 
-    const tags = etiketInput
-      .split(/[,;\n]/g)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const tags = dedupeEtiketler(
+      etiketInput
+        .split(/[,;\n]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
 
     const tahNum = tahminiDeger.trim()
       ? Number(tahminiDeger.replace(",", "."))
@@ -217,9 +403,11 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
 
     const forcedSatis = kurumDurumuToSatis(kd);
     const resolvedSatis: SatisDurumu | undefined = forcedSatis
-      ?? (satisLegacy !== EMPTY_SATIS ? (satisLegacy as SatisDurumu) : undefined);
+      ? forcedSatis
+      : satisLegacy !== EMPTY_SATIS
+        ? (satisLegacy as SatisDurumu)
+        : undefined;
 
-    /* Kisi id’leri — yeni kayıtta uuid garanti */
     const kisilerToStore: KurumKisi[] | undefined = ek.length
       ? ek.map((k) => ({
           ...k,
@@ -240,9 +428,9 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
       ...(kisilerToStore ? { kisiler: kisilerToStore } : {}),
 
       webSitesi: webSitesi.trim() || undefined,
-      instagram: instagram.trim() || undefined,
-      facebook: facebook.trim() || undefined,
-      linkedin: linkedin.trim() || undefined,
+      instagram: normalizeSocialForStore(instagram, "instagram") || undefined,
+      facebook: normalizeSocialForStore(facebook, "facebook") || undefined,
+      linkedin: normalizeSocialForStore(linkedin, "linkedin") || undefined,
 
       not: not.trim() || undefined,
 
@@ -263,7 +451,9 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
 
       ...(resolvedSatis ? { satisDurumu: resolvedSatis } : {}),
       oncelik:
-        oncelik === EMPTY_ON ? undefined : (oncelik as "Yüksek" | "Orta" | "Düşük"),
+        oncelik === EMPTY_ON
+          ? undefined
+          : (oncelik as "Yüksek" | "Orta" | "Düşük"),
     };
 
     const cleanData = Object.fromEntries(
@@ -275,14 +465,18 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
       if (gorusme) {
         await updateGorusme(gorusme.id, cleanData);
         toast.success("Kurum güncellendi");
+        closeAndReset(onOpenChange, {
+          setDup: setDuplicateHit,
+          setPending: setPendingNewId,
+        });
       } else {
-        await addGorusme({
+        const ref = await addGorusme({
           ...cleanData,
           createdBy: user.uid,
         });
         toast.success("Kurum eklendi");
+        setPendingNewId(ref.id);
       }
-      onOpenChange(false);
     } catch (error) {
       console.error(error);
       toast.error("Bir hata oluştu");
@@ -291,178 +485,116 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
     }
   };
 
+  const applyIlkIletisim = async (yes: boolean) => {
+    if (!pendingNewId || !user) return;
+    if (!yes) {
+      closeAndReset(onOpenChange, {
+        setDup: setDuplicateHit,
+        setPending: setPendingNewId,
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const base = mergeMilestones(undefined);
+      const milestones: KurumMilestone[] = base.map((m) =>
+        m.tip === "ilk_iletisim"
+          ? {
+              ...m,
+              tamamlandi: true,
+              tamamlanmaTarihi: Timestamp.now(),
+              tamamlayanUid: user.uid,
+              tamamlayanAd: user.displayName || undefined,
+            }
+          : m
+      );
+      await updateGorusme(pendingNewId, { milestones });
+      toast.success("İlk iletişim kaydedildi");
+      closeAndReset(onOpenChange, {
+        setDup: setDuplicateHit,
+        setPending: setPendingNewId,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error("Milestone güncellenemedi");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const kisiWarning = effectiveKisiler(kisiler).length === 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>
-            {gorusme ? "Kurumu Düzenle" : "Yeni Kurum Ekle"}
-          </DialogTitle>
-          <DialogDescription>
-            Kurum kaydı; süreç adımları kurum detay sayfasında işaretlenir.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) setEtiketSuggestOpen(false);
+          if (!next && pendingNewId && !saving) {
+            void applyIlkIletisim(false);
+            return;
+          }
+          onOpenChange(next);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {gorusme ? "Kurumu Düzenle" : "Yeni Kurum Ekle"}
+            </DialogTitle>
+            <DialogDescription>
+              Kurum kaydı; süreç adımları kurum detay sayfasında işaretlenir.
+            </DialogDescription>
+          </DialogHeader>
 
-        <Tabs value={tab} onValueChange={setTab} className="gap-4">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="temel">Temel Bilgiler</TabsTrigger>
-            <TabsTrigger value="kisiler">
-              İletişim Kişileri{kisiWarning ? " (!)" : ""}
-            </TabsTrigger>
-            <TabsTrigger value="online">Online Varlık</TabsTrigger>
-            <TabsTrigger value="notlar">Notlar</TabsTrigger>
-          </TabsList>
+          <Tabs value={tab} onValueChange={setTab} className="gap-4">
+            <TabsList className="flex-wrap">
+              <TabsTrigger value="temel">Temel Bilgiler</TabsTrigger>
+              <TabsTrigger value="kisiler">
+                İletişim Kişileri{kisiWarning ? " (!)" : ""}
+              </TabsTrigger>
+              <TabsTrigger value="online">Online Varlık</TabsTrigger>
+              <TabsTrigger value="notlar">Notlar</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="temel" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="kurum-ad">Kurum Adı *</Label>
-                <Input
-                  id="kurum-ad"
-                  value={ad}
-                  onChange={(e) => setAd(e.target.value)}
-                  placeholder="Örn: Çağdaş Eğitim"
-                />
-              </div>
+            <TabsContent value="temel" className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="kurum-ad">Kurum Adı *</Label>
+                  <Input
+                    id="kurum-ad"
+                    value={ad}
+                    onChange={(e) => setAd(e.target.value)}
+                    placeholder="Örn: Çağdaş Eğitim"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label>Kurum Tipi</Label>
-                <Select value={kurumTipi} onValueChange={setKurumTipi}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seçin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_KT}>Belirtilmedi</SelectItem>
-                    {KURUM_TIPLERI.map((tip) => (
-                      <SelectItem key={tip} value={tip}>
-                        {tip}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Kurum Durumu</Label>
-                <Select value={kurumDurumu} onValueChange={setKurumDurumu}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seçin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_KD}>Belirtilmedi</SelectItem>
-                    {KURUM_DURUMLARI.map((d) => (
-                      <SelectItem key={d} value={d}>
-                        {d}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="sehir">Şehir</Label>
-                <Input
-                  id="sehir"
-                  value={sehir}
-                  onChange={(e) => setSehir(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="ilce">İlçe</Label>
-                <Input
-                  id="ilce"
-                  value={ilce}
-                  onChange={(e) => setIlce(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="etiket">Etiketler (virgülle)</Label>
-                <Input
-                  id="etiket"
-                  value={etiketInput}
-                  onChange={(e) => setEtiketInput(e.target.value)}
-                  placeholder="Konya Merkez, Özel Okul"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tahmin">Tahmini Değer (₺)</Label>
-                <Input
-                  id="tahmin"
-                  inputMode="decimal"
-                  value={tahminiDeger}
-                  onChange={(e) => setTahminiDeger(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Öncelik</Label>
-                <Select value={oncelik} onValueChange={setOncelik}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seçin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_ON}>Belirtilmedi</SelectItem>
-                    {ONCELIKLER.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <details className="rounded-md border bg-muted/30 p-3 text-sm">
-              <summary className="cursor-pointer font-medium">
-                Ekip ve eski süreç alanları
-              </summary>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>İletişime Geçen</Label>
-                  <Select value={iletisimeGecen} onValueChange={setIletisimeGecen}>
+                  <Label>Kurum Tipi</Label>
+                  <Select value={kurumTipi} onValueChange={setKurumTipi}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seçin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={EMPTY_IG}>Belirtilmedi</SelectItem>
-                      {EKIP_UYELERI.map((isim) => (
-                        <SelectItem key={isim} value={isim}>
-                          {isim}
+                      <SelectItem value={EMPTY_KT}>Belirtilmedi</SelectItem>
+                      {KURUM_TIPLERI.map((tip) => (
+                        <SelectItem key={tip} value={tip}>
+                          {tip}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="araci">Aracı</Label>
-                  <Input
-                    id="araci"
-                    value={araci}
-                    onChange={(e) => setAraci(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="konumu">Konumu (eski alan)</Label>
-                  <Input
-                    id="konumu"
-                    value={konumu}
-                    onChange={(e) => setKonumu(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Eski süreç durumu</Label>
-                  <Select value={durumLegacy} onValueChange={setDurumLegacy}>
+                  <Label>Kurum Durumu</Label>
+                  <Select value={kurumDurumu} onValueChange={setKurumDurumu}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seçin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={EMPTY_DURUM}>Belirtilmedi</SelectItem>
-                      {DURUMLAR.map((d) => (
+                      <SelectItem value={EMPTY_KD}>Belirtilmedi</SelectItem>
+                      {KURUM_DURUMLARI.map((d) => (
                         <SelectItem key={d} value={d}>
                           {d}
                         </SelectItem>
@@ -470,202 +602,507 @@ export function GorusmeDialog({ open, onOpenChange, gorusme }: Props) {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <StringCombobox
+                  id="sehir-cb"
+                  label="Şehir (İl)"
+                  value={sehir}
+                  onChange={setSehir}
+                  options={ILLER_ADLARI}
+                  allowCustom={false}
+                  placeholder="İl seç veya ara"
+                  disabled={saving || Boolean(pendingNewId)}
+                />
+
+                <StringCombobox
+                  id="ilce-cb"
+                  label="İlçe"
+                  value={ilce}
+                  onChange={setIlce}
+                  options={ilceOptions}
+                  allowCustom
+                  placeholder={
+                    sehir ? "İlçe ara veya yaz" : "Önce şehir seçin"
+                  }
+                  disabled={saving || Boolean(pendingNewId) || !sehir}
+                />
+                <p className="text-xs text-muted-foreground md:col-span-2">
+                  Son seçtiğiniz il bu tarayıcıda hatırlanır.
+                </p>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="etiket">Etiketler</Label>
+                  <Popover
+                    open={
+                      etiketSuggestOpen &&
+                      tagSuggestions.length > 0 &&
+                      Boolean(open)
+                    }
+                    onOpenChange={setEtiketSuggestOpen}
+                  >
+                    <PopoverAnchor asChild>
+                      <Input
+                        id="etiket"
+                        value={etiketInput}
+                        onChange={(e) => {
+                          setEtiketInput(e.target.value);
+                          setEtiketSuggestOpen(true);
+                        }}
+                        onFocus={() =>
+                          tagSuggestions.length > 0 &&
+                          setEtiketSuggestOpen(true)
+                        }
+                        placeholder="Önerilerden seçin veya virgülle ayırın"
+                        disabled={Boolean(pendingNewId)}
+                      />
+                    </PopoverAnchor>
+                    <PopoverContent
+                      className="w-[min(100vw-2rem,var(--radix-popover-anchor-width,20rem))] p-0"
+                      align="start"
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <ul className="max-h-48 overflow-y-auto p-1">
+                        {tagSuggestions.map((tag) => (
+                          <li key={tag}>
+                            <button
+                              type="button"
+                              className="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                applyEtiketPick(tag);
+                                setEtiketSuggestOpen(false);
+                              }}
+                            >
+                              {tag}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
                 <div className="space-y-2">
-                  <Label>Satış (legacy)</Label>
-                  <Select value={satisLegacy} onValueChange={setSatisLegacy}>
+                  <Label htmlFor="tahmin">Tahmini Değer (₺)</Label>
+                  <Input
+                    id="tahmin"
+                    inputMode="decimal"
+                    value={tahminiDeger}
+                    onChange={(e) => setTahminiDeger(e.target.value)}
+                    disabled={Boolean(pendingNewId)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Öncelik</Label>
+                  <Select value={oncelik} onValueChange={setOncelik}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seçin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={EMPTY_SATIS}>Belirtilmedi</SelectItem>
-                      {SATIS_DURUMLARI.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
+                      <SelectItem value={EMPTY_ON}>Belirtilmedi</SelectItem>
+                      {ONCELIKLER.map((o) => (
+                        <SelectItem key={o} value={o}>
+                          {o}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="baslama">Başlama Tarihi</Label>
-                  <Input
-                    id="baslama"
-                    type="date"
-                    value={baslamaTarihi}
-                    onChange={(e) => setBaslamaTarihi(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sonTemas">Son Temas Tarihi</Label>
-                  <Input
-                    id="sonTemas"
-                    type="date"
-                    value={sonTemasTarihi}
-                    onChange={(e) => setSonTemasTarihi(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bitis">Bitiş Tarihi</Label>
-                  <Input
-                    id="bitis"
-                    type="date"
-                    value={bitisTarihi}
-                    onChange={(e) => setBitisTarihi(e.target.value)}
-                  />
-                </div>
               </div>
-            </details>
-          </TabsContent>
 
-          <TabsContent value="kisiler" className="space-y-4">
-            {kisiWarning && (
-              <p className="text-sm text-amber-800">
-                Henüz geçerli bir kişi yok. Kayıtta eski telefon / isim alanları
-                varsa korunur; yeni kayıtlar için kişi eklemen önerilir.
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={addKisiRow}>
-                <Plus className="mr-2 h-4 w-4" />
-                Kişi Ekle
-              </Button>
-            </div>
-            <div className="space-y-3">
-              {kisiler.map((k) => (
-                <Card key={k.id}>
-                  <CardContent className="space-y-3 p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Kişi
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600"
-                        onClick={() => removeKisiRow(k.id)}
-                      >
-                        <Trash2 className="mr-1 h-4 w-4" />
-                        Sil
-                      </Button>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Ad *</Label>
-                        <Input
-                          value={k.ad}
-                          onChange={(e) =>
-                            updateKisiRow(k.id, { ad: e.target.value })
-                          }
-                          placeholder="Ad Soyad"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Rol</Label>
-                        <Input
-                          value={k.rol || ""}
-                          onChange={(e) =>
-                            updateKisiRow(k.id, { rol: e.target.value })
-                          }
-                          placeholder="Müdür, Muhasebe..."
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Telefon</Label>
-                        <Input
-                          value={k.telefon || ""}
-                          onChange={(e) =>
-                            updateKisiRow(k.id, { telefon: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>E-posta</Label>
-                        <Input
-                          type="email"
-                          value={k.email || ""}
-                          onChange={(e) =>
-                            updateKisiRow(k.id, { email: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label>Notlar</Label>
-                        <Textarea
-                          rows={2}
-                          value={k.notlar || ""}
-                          onChange={(e) =>
-                            updateKisiRow(k.id, { notlar: e.target.value })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
+              <details className="rounded-md border bg-muted/30 p-3 text-sm">
+                <summary className="cursor-pointer font-medium">
+                  Ekip ve eski süreç alanları
+                </summary>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>İletişime Geçen</Label>
+                    <Select
+                      value={iletisimeGecen}
+                      onValueChange={setIletisimeGecen}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={EMPTY_IG}>Belirtilmedi</SelectItem>
+                        {EKIP_UYELERI.map((isim) => (
+                          <SelectItem key={isim} value={isim}>
+                            {isim}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="araci">Aracı</Label>
+                    <Input
+                      id="araci"
+                      value={araci}
+                      onChange={(e) => setAraci(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="konumu">Konumu (eski alan)</Label>
+                    <Input
+                      id="konumu"
+                      value={konumu}
+                      onChange={(e) => setKonumu(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Eski süreç durumu</Label>
+                    <Select value={durumLegacy} onValueChange={setDurumLegacy}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={EMPTY_DURUM}>Belirtilmedi</SelectItem>
+                        {DURUMLAR.map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Satış (legacy)</Label>
+                    <Select value={satisLegacy} onValueChange={setSatisLegacy}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={EMPTY_SATIS}>Belirtilmedi</SelectItem>
+                        {SATIS_DURUMLARI.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="baslama">Başlama Tarihi</Label>
+                    <Input
+                      id="baslama"
+                      type="date"
+                      value={baslamaTarihi}
+                      onChange={(e) => setBaslamaTarihi(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sonTemas">Son Temas Tarihi</Label>
+                    <Input
+                      id="sonTemas"
+                      type="date"
+                      value={sonTemasTarihi}
+                      onChange={(e) => setSonTemasTarihi(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bitis">Bitiş Tarihi</Label>
+                    <Input
+                      id="bitis"
+                      type="date"
+                      value={bitisTarihi}
+                      onChange={(e) => setBitisTarihi(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </details>
+            </TabsContent>
 
-          <TabsContent value="online" className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="web">Web Sitesi</Label>
-              <Input
-                id="web"
-                value={webSitesi}
-                onChange={(e) => setWebSitesi(e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ig">Instagram</Label>
-              <Input
-                id="ig"
-                value={instagram}
-                onChange={(e) => setInstagram(e.target.value)}
-                placeholder="@kullanici veya tam URL"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="fb">Facebook</Label>
-              <Input
-                id="fb"
-                value={facebook}
-                onChange={(e) => setFacebook(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="li">LinkedIn</Label>
-              <Input
-                id="li"
-                value={linkedin}
-                onChange={(e) => setLinkedin(e.target.value)}
-              />
-            </div>
-          </TabsContent>
+            <TabsContent value="kisiler" className="space-y-4">
+              {kisiWarning && (
+                <p className="text-sm text-amber-800">
+                  Henüz geçerli bir kişi yok. Kayıtta eski telefon / isim alanları
+                  varsa korunur; yeni kayıtlar için kişi eklemen önerilir.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addKisiRow}
+                  disabled={Boolean(pendingNewId)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Kişi Ekle
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {kisiler.map((k) => {
+                  const presetKeys = new Set<string>(
+                    ROL_QUICK_ROLES.slice(0, -1).map((x) => x as string)
+                  );
+                  const hasPreset = !!(k.rol && presetKeys.has(k.rol));
+                  const selectRol =
+                    hasPreset ? (k.rol as string) : ROL_OTHER;
+                  return (
+                    <Card key={k.id}>
+                      <CardContent className="space-y-3 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Kişi
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600"
+                            onClick={() => removeKisiRow(k.id)}
+                            disabled={Boolean(pendingNewId)}
+                          >
+                            <Trash2 className="mr-1 h-4 w-4" />
+                            Sil
+                          </Button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Ad *</Label>
+                            <Input
+                              value={k.ad}
+                              onChange={(e) =>
+                                updateKisiRow(k.id, { ad: e.target.value })
+                              }
+                              placeholder="Ad Soyad"
+                              disabled={Boolean(pendingNewId)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Rol</Label>
+                            <Select
+                              value={selectRol}
+                              onValueChange={(v) => {
+                                if (v === ROL_OTHER) {
+                                  updateKisiRow(k.id, {
+                                    rol: hasPreset ? "" : k.rol || "",
+                                  });
+                                } else {
+                                  updateKisiRow(k.id, { rol: v });
+                                }
+                              }}
+                              disabled={Boolean(pendingNewId)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Seçin" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ROL_QUICK_ROLES.map((r) => (
+                                  <SelectItem key={r} value={r}>
+                                    {r}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {selectRol === ROL_OTHER && (
+                              <Input
+                                className="mt-1"
+                                value={k.rol && !hasPreset ? k.rol : ""}
+                                onChange={(e) =>
+                                  updateKisiRow(k.id, {
+                                    rol: e.target.value,
+                                  })
+                                }
+                                placeholder="Rolü yazın"
+                                disabled={Boolean(pendingNewId)}
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Telefon</Label>
+                            <Input
+                              value={k.telefon || ""}
+                              onChange={(e) =>
+                                updateKisiRow(k.id, {
+                                  telefon: formatPhone(e.target.value),
+                                })
+                              }
+                              inputMode="tel"
+                              disabled={Boolean(pendingNewId)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>E-posta</Label>
+                            <Input
+                              type="email"
+                              value={k.email || ""}
+                              onChange={(e) =>
+                                updateKisiRow(k.id, { email: e.target.value })
+                              }
+                              disabled={Boolean(pendingNewId)}
+                            />
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Label>Notlar</Label>
+                            <Textarea
+                              rows={2}
+                              value={k.notlar || ""}
+                              onChange={(e) =>
+                                updateKisiRow(k.id, {
+                                  notlar: e.target.value,
+                                })
+                              }
+                              disabled={Boolean(pendingNewId)}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
 
-          <TabsContent value="notlar">
-            <div className="space-y-2">
-              <Label htmlFor="not-alan">Genel notlar</Label>
-              <Textarea
-                id="not-alan"
-                rows={6}
-                value={not}
-                onChange={(e) => setNot(e.target.value)}
-                placeholder="Kurumla ilgili genel notlar..."
-              />
-            </div>
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="online" className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="web">Web Sitesi</Label>
+                <Input
+                  id="web"
+                  value={webSitesi}
+                  onChange={(e) => setWebSitesi(e.target.value)}
+                  placeholder="https://..."
+                  disabled={Boolean(pendingNewId)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ig">Instagram</Label>
+                <Input
+                  id="ig"
+                  value={instagram}
+                  onChange={(e) => setInstagram(e.target.value)}
+                  placeholder="@kullanici veya tam URL"
+                  disabled={Boolean(pendingNewId)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fb">Facebook</Label>
+                <Input
+                  id="fb"
+                  value={facebook}
+                  onChange={(e) => setFacebook(e.target.value)}
+                  disabled={Boolean(pendingNewId)}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="li">LinkedIn</Label>
+                <Input
+                  id="li"
+                  value={linkedin}
+                  onChange={(e) => setLinkedin(e.target.value)}
+                  disabled={Boolean(pendingNewId)}
+                />
+              </div>
+            </TabsContent>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            İptal
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Kaydediliyor..." : gorusme ? "Güncelle" : "Ekle"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <TabsContent value="notlar">
+              <div className="space-y-2">
+                <Label htmlFor="not-alan">Genel notlar</Label>
+                <Textarea
+                  id="not-alan"
+                  rows={6}
+                  value={not}
+                  onChange={(e) => setNot(e.target.value)}
+                  placeholder="Kurumla ilgili genel notlar..."
+                  disabled={Boolean(pendingNewId)}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                pendingNewId
+                  ? void applyIlkIletisim(false)
+                  : onOpenChange(false)
+              }
+              disabled={saving}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={() => void runSave({ skipDuplicateCheck: false })}
+              disabled={saving || Boolean(pendingNewId)}
+            >
+              {saving ? "Kaydediliyor..." : gorusme ? "Güncelle" : "Ekle"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={duplicateHit !== null}
+        onOpenChange={(v) => {
+          if (!v) setDuplicateHit(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Benzer kurum var</DialogTitle>
+            <DialogDescription className="text-left">
+              {duplicateHit
+                ? `"${duplicateHit.ad || duplicateHit.kurum || ""}" adına çok yakın bir kayıt${duplicateHit.sehir ? ` (${duplicateHit.sehir})` : ""} var. Mevcut kayda gitmek ister misiniz?`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const hit = duplicateHit;
+                setDuplicateHit(null);
+                router.push(hit ? `/kurumlar/${hit.id}` : "/gorusmeler");
+              }}
+            >
+              Evet, Git
+            </Button>
+            <Button
+              onClick={() => {
+                setDuplicateHit(null);
+                void runSave({ skipDuplicateCheck: true });
+              }}
+            >
+              Hayır, yine de kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingNewId !== null && !duplicateHit}
+        onOpenChange={(v) => {
+          if (!v && pendingNewId) {
+            void applyIlkIletisim(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>İlk iletişim</DialogTitle>
+            <DialogDescription>
+              Bu kurumla ilk iletişim kuruldu mu? Evet diyerek süreçte
+              &quot;İlk iletişim&quot; adımını işaretlersiniz.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={() => void applyIlkIletisim(false)}
+              disabled={saving}
+            >
+              Hayır
+            </Button>
+            <Button onClick={() => void applyIlkIletisim(true)} disabled={saving}>
+              Evet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
