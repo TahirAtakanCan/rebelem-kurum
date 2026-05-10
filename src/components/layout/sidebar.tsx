@@ -5,18 +5,18 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  Users,
   Calendar,
   GraduationCap,
   LayoutDashboard,
   ListTodo,
+  Building2,
 } from "lucide-react";
 import { subscribeGorevler } from "@/lib/gorevler";
 import { useAuth } from "@/components/auth/auth-provider";
 
 const menuItems = [
   { href: "/ozet", label: "Özet Panel", icon: LayoutDashboard },
-  { href: "/gorusmeler", label: "Görüşmeler", icon: Users },
+  { href: "/gorusmeler", label: "Kurumlar", icon: Building2 },
   { href: "/randevular", label: "Randevular", icon: Calendar },
   { href: "/egitimler", label: "Eğitimler", icon: GraduationCap },
   { href: "/gorevler", label: "Görevler", icon: ListTodo },

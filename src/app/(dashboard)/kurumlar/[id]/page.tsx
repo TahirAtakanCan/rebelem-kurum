@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format, formatDistanceToNow, isPast, isThisWeek, isToday } from "date-fns";
 import { tr } from "date-fns/locale";
 import { db } from "@/lib/firebase";
@@ -15,9 +15,12 @@ import {
   EgitimDurumu,
   Gorev,
   GorevDurumu,
+  MilestoneTipi,
+  KurumMilestone,
 } from "@/lib/types";
 import { subscribeRandevular } from "@/lib/randevular";
 import { subscribeEgitimler } from "@/lib/egitimler";
+import { updateGorusme } from "@/lib/gorusmeler";
 import { deleteGorev, subscribeGorevler, toggleGorevDurum } from "@/lib/gorevler";
 import {
   addKurumNotu,
@@ -31,10 +34,18 @@ import {
   GOREV_DURUM_RENKLERI,
   ILISKI_RENKLERI,
   KURUM_TIPI_RENKLERI,
+  KURUM_DURUM_RENKLERI,
+  MILESTONE_TIPLERI,
   ONCELIK_RENKLERI,
   RANDEVU_DURUM_RENKLERI,
   SATIS_RENKLERI,
 } from "@/lib/constants";
+import {
+  getKurumDisplayName,
+  getResolvedKurumDurumu,
+  mergeMilestones,
+  milestoneCompletionPercent,
+} from "@/lib/kurum-helpers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +63,14 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { GorusmeDialog } from "@/components/gorusmeler/gorusme-dialog";
 import { RandevuDialog } from "@/components/randevular/randevu-dialog";
@@ -94,30 +113,35 @@ export default function KurumDetayPage() {
   const [gorevler, setGorevler] = useState<Gorev[]>([]);
   const [loadingGorevler, setLoadingGorevler] = useState(true);
 
-  useEffect(() => {
-    if (!user || !gorusmeId) return;
+  const [milestoneNoteOpen, setMilestoneNoteOpen] = useState(false);
+  const [milestoneNoteTip, setMilestoneNoteTip] = useState<MilestoneTipi | null>(null);
+  const [milestoneNoteDraft, setMilestoneNoteDraft] = useState("");
+  const [savingMilestone, setSavingMilestone] = useState(false);
 
-    const fetchGorusme = async () => {
-      setLoadingGorusme(true);
-      try {
-        const snapshot = await getDoc(doc(db, "gorusmeler", gorusmeId));
-        if (!snapshot.exists()) {
-          setNotFound(true);
-          setGorusme(null);
-        } else {
-          setNotFound(false);
-          setGorusme({ id: snapshot.id, ...(snapshot.data() as Omit<Gorusme, "id">) });
-        }
-      } catch {
+  const loadGorusme = useCallback(async () => {
+    if (!gorusmeId) return;
+    setLoadingGorusme(true);
+    try {
+      const snapshot = await getDoc(doc(db, "gorusmeler", gorusmeId));
+      if (!snapshot.exists()) {
         setNotFound(true);
         setGorusme(null);
-      } finally {
-        setLoadingGorusme(false);
+      } else {
+        setNotFound(false);
+        setGorusme({ id: snapshot.id, ...(snapshot.data() as Omit<Gorusme, "id">) });
       }
-    };
+    } catch {
+      setNotFound(true);
+      setGorusme(null);
+    } finally {
+      setLoadingGorusme(false);
+    }
+  }, [gorusmeId]);
 
-    fetchGorusme();
-  }, [gorusmeId, user]);
+  useEffect(() => {
+    if (!user || !gorusmeId) return;
+    loadGorusme();
+  }, [gorusmeId, user, loadGorusme]);
 
   useEffect(() => {
     if (!user) return;
@@ -159,7 +183,7 @@ export default function KurumDetayPage() {
     return () => unsub();
   }, [user]);
 
-  const kurumAdi = gorusme?.kurum || "";
+  const kurumAdi = gorusme ? getKurumDisplayName(gorusme) : "";
 
   const kurumRandevular = useMemo(() => {
     if (!kurumAdi) return [];
@@ -250,6 +274,50 @@ export default function KurumDetayPage() {
     return "";
   };
 
+  const persistMilestones = async (next: KurumMilestone[]) => {
+    if (!gorusmeId) return;
+    await updateGorusme(gorusmeId, { milestones: next });
+    await loadGorusme();
+  };
+
+  const handleMilestoneToggle = async (tip: MilestoneTipi, tamamlandi: boolean) => {
+    if (!gorusme || !user) return;
+    const merged = mergeMilestones(gorusme.milestones);
+    const now = Timestamp.fromDate(new Date());
+    const next = merged.map((m) =>
+      m.tip === tip
+        ? {
+            ...m,
+            tamamlandi,
+            tamamlanmaTarihi: tamamlandi ? now : undefined,
+            tamamlayanUid: tamamlandi ? user.uid : undefined,
+            tamamlayanAd: tamamlandi ? user.displayName || undefined : undefined,
+          }
+        : m
+    );
+    await persistMilestones(next);
+  };
+
+  const handleSaveMilestoneNote = async () => {
+    if (!gorusme || !milestoneNoteTip) return;
+    setSavingMilestone(true);
+    try {
+      const merged = mergeMilestones(gorusme.milestones);
+      const next = merged.map((m) =>
+        m.tip === milestoneNoteTip ? { ...m, not: milestoneNoteDraft.trim() || undefined } : m
+      );
+      await persistMilestones(next);
+      setMilestoneNoteOpen(false);
+    } finally {
+      setSavingMilestone(false);
+    }
+  };
+
+  const milestonesMerged = useMemo(
+    () => (gorusme ? mergeMilestones(gorusme.milestones) : []),
+    [gorusme]
+  );
+
   if (loading || loadingGorusme) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -268,7 +336,7 @@ export default function KurumDetayPage() {
           <div className="text-sm text-muted-foreground">
             Aradığınız kurum kaydı bulunamadı.
           </div>
-          <Button onClick={() => router.push("/gorusmeler")}>Görüşmelere Dön</Button>
+          <Button onClick={() => router.push("/gorusmeler")}>Kurumlara Dön</Button>
         </CardContent>
       </Card>
     );
@@ -287,7 +355,7 @@ export default function KurumDetayPage() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Geri
           </Button>
-          <h1 className="text-2xl font-bold md:text-3xl">{gorusme.kurum}</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">{getKurumDisplayName(gorusme)}</h1>
         </div>
         <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
           <Button onClick={() => setGorusmeDialogOpen(true)}>
@@ -311,6 +379,9 @@ export default function KurumDetayPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
+        <Badge variant="outline" className={KURUM_DURUM_RENKLERI[getResolvedKurumDurumu(gorusme)]}>
+          {getResolvedKurumDurumu(gorusme)}
+        </Badge>
         {gorusme.kurumTipi && (
           <Badge variant="outline" className={KURUM_TIPI_RENKLERI[gorusme.kurumTipi]}>
             {gorusme.kurumTipi}
@@ -318,7 +389,7 @@ export default function KurumDetayPage() {
         )}
         {gorusme.durum && (
           <Badge variant="outline" className={DURUM_RENKLERI[gorusme.durum]}>
-            {gorusme.durum}
+            Eski süreç: {gorusme.durum}
           </Badge>
         )}
         {gorusme.oncelik && (
@@ -326,9 +397,9 @@ export default function KurumDetayPage() {
             {gorusme.oncelik}
           </Badge>
         )}
-        {gorusme.satisDurumu && (
+        {!gorusme.kurumDurumu && gorusme.satisDurumu && (
           <Badge variant="outline" className={SATIS_RENKLERI[gorusme.satisDurumu]}>
-            {gorusme.satisDurumu}
+            Legacy satış: {gorusme.satisDurumu}
           </Badge>
         )}
       </div>
@@ -337,6 +408,7 @@ export default function KurumDetayPage() {
         <div className="overflow-x-auto">
           <TabsList className="min-w-max">
             <TabsTrigger value="bilgiler">Bilgiler</TabsTrigger>
+            <TabsTrigger value="surec">Süreç</TabsTrigger>
             <TabsTrigger value="notlar">Notlar & Zaman Çizelgesi</TabsTrigger>
             <TabsTrigger value="randevular">Randevular</TabsTrigger>
             <TabsTrigger value="egitimler">Eğitimler</TabsTrigger>
@@ -345,21 +417,170 @@ export default function KurumDetayPage() {
         </div>
 
         <TabsContent value="bilgiler">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Kurum özeti</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 text-sm md:grid-cols-2">
+                <InfoItem label="Şehir" value={gorusme.sehir || "-"} />
+                <InfoItem label="İlçe" value={gorusme.ilce || "-"} />
+                <InfoItem
+                  label="Tahmini Değer"
+                  value={
+                    gorusme.tahminiDeger != null
+                      ? `${gorusme.tahminiDeger.toLocaleString("tr-TR")} ₺`
+                      : "-"
+                  }
+                />
+                <InfoItem
+                  label="Etiketler"
+                  value={(gorusme.etiketler || []).length ? (gorusme.etiketler || []).join(", ") : "-"}
+                  full
+                />
+              </CardContent>
+            </Card>
+
+            {(gorusme.kisiler?.length ?? 0) > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Kişiler</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {gorusme.kisiler?.map((k) => (
+                    <div key={k.id} className="rounded-md border p-4 text-sm">
+                      <div className="font-semibold">{k.ad || "(İsimsiz)"}</div>
+                      <div className="mt-1 space-y-0.5 text-muted-foreground">
+                        {k.rol && <div>Rol: {k.rol}</div>}
+                        {k.telefon && <div>Tel: {k.telefon}</div>}
+                        {k.email && <div>E-posta: {k.email}</div>}
+                        {k.notlar && <div className="whitespace-pre-wrap pt-2">{k.notlar}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Online varlık</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 text-sm md:grid-cols-2">
+                <LinkMaybe label="Web" href={gorusme.webSitesi} />
+                <LinkMaybe label="Instagram" href={gorusme.instagram} ig />
+                <LinkMaybe label="Facebook" href={gorusme.facebook} />
+                <LinkMaybe label="LinkedIn" href={gorusme.linkedin} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Ek bilgiler (legacy ve süreç)</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 text-sm md:grid-cols-2">
+                <InfoItem label="İlk kişi (legacy)" value={gorusme.ilgiliKisi || "-"} />
+                <InfoItem label="Konumu" value={gorusme.konumu || "-"} />
+                <InfoItem label="Telefon (legacy)" value={gorusme.iletisimNo || "-"} />
+                <InfoItem label="Mail (legacy)" value={gorusme.mail || "-"} />
+                <InfoItem label="İletişime Geçen" value={gorusme.iletisimeGecen || "-"} />
+                <InfoItem label="Aracı" value={gorusme.araci || "-"} />
+                <InfoItem label="Başlama Tarihi" value={formatDate(gorusme.baslamaTarihi)} />
+                <InfoItem label="Son Temas" value={formatDate(gorusme.sonTemasTarihi)} />
+                <InfoItem label="Bitiş Tarihi" value={formatDate(gorusme.bitisTarihi)} />
+                <InfoItem label="Genel Not" value={gorusme.not || "-"} full />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="surec" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Temel Bilgiler</CardTitle>
+              <CardTitle>Satış süreci — milestone</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 text-sm md:grid-cols-2">
-              <InfoItem label="İlgili Kişi" value={gorusme.ilgiliKisi || "-"} />
-              <InfoItem label="Konumu" value={gorusme.konumu || "-"} />
-              <InfoItem label="Telefon" value={gorusme.iletisimNo || "-"} />
-              <InfoItem label="Mail" value={gorusme.mail || "-"} />
-              <InfoItem label="İletişime Geçen" value={gorusme.iletisimeGecen || "-"} />
-              <InfoItem label="Aracı" value={gorusme.araci || "-"} />
-              <InfoItem label="Başlama Tarihi" value={formatDate(gorusme.baslamaTarihi)} />
-              <InfoItem label="Son Temas" value={formatDate(gorusme.sonTemasTarihi)} />
-              <InfoItem label="Bitiş Tarihi" value={formatDate(gorusme.bitisTarihi)} />
-              <InfoItem label="Not" value={gorusme.not || "-"} full />
+            <CardContent className="space-y-4">
+              <div>
+                <div className="mb-2 flex justify-between text-sm font-medium">
+                  <span>
+                    İlerleme: {milestonesMerged.filter((x) => x.tamamlandi).length}/
+                    {MILESTONE_TIPLERI.length}
+                  </span>
+                  <span className="text-muted-foreground">
+                    %{milestoneCompletionPercent(gorusme.milestones)} tamamlandı
+                  </span>
+                </div>
+                <div className="h-3 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-green-600 transition-all"
+                    style={{
+                      width: `${milestoneCompletionPercent(gorusme.milestones)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="space-y-3">
+                {MILESTONE_TIPLERI.map((def) => {
+                  const m = milestonesMerged.find((x) => x.tip === def.tip);
+                  const tam = m?.tamamlandi ?? false;
+                  return (
+                    <div
+                      key={def.tip}
+                      className={cn(
+                        "rounded-lg border p-4 transition-colors",
+                        tam ? "border-green-200 bg-green-50/60" : "bg-muted/20"
+                      )}
+                    >
+                      <div className="flex flex-wrap items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 shrink-0 accent-green-600"
+                          checked={tam}
+                          onChange={(e) =>
+                            handleMilestoneToggle(def.tip, e.target.checked)
+                          }
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="font-medium">{def.label}</div>
+                          <div className="text-sm text-muted-foreground">{def.aciklama}</div>
+                          {tam && m?.tamamlanmaTarihi && (
+                            <div className="text-xs text-muted-foreground">
+                              Tamamlandı:{" "}
+                              {format(m.tamamlanmaTarihi.toDate(), "dd.MM.yyyy HH:mm", {
+                                locale: tr,
+                              })}
+                              {m.tamamlayanAd ? ` · ${m.tamamlayanAd}` : ""}
+                            </div>
+                          )}
+                          {!tam && (
+                            <div className="text-xs font-medium text-muted-foreground">
+                              İşaretleyerek tamamlanmış yap
+                            </div>
+                          )}
+                          {m?.not ? (
+                            <div className="rounded-md bg-background/80 p-2 text-sm">
+                              Not: {m.not}
+                            </div>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={savingMilestone}
+                            onClick={() => {
+                              setMilestoneNoteTip(def.tip);
+                              setMilestoneNoteDraft(m?.not || "");
+                              setMilestoneNoteOpen(true);
+                            }}
+                          >
+                            Notu düzenle
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -706,20 +927,47 @@ export default function KurumDetayPage() {
 
       <GorusmeDialog
         open={gorusmeDialogOpen}
-        onOpenChange={setGorusmeDialogOpen}
+        onOpenChange={(open) => {
+          setGorusmeDialogOpen(open);
+          if (!open) loadGorusme();
+        }}
         gorusme={gorusme}
       />
+
+      <Dialog open={milestoneNoteOpen} onOpenChange={setMilestoneNoteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adım notu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Not</Label>
+            <Textarea
+              rows={4}
+              value={milestoneNoteDraft}
+              onChange={(e) => setMilestoneNoteDraft(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMilestoneNoteOpen(false)} disabled={savingMilestone}>
+              İptal
+            </Button>
+            <Button onClick={handleSaveMilestoneNote} disabled={savingMilestone}>
+              {savingMilestone ? "Kaydediliyor..." : "Kaydet"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <RandevuDialog
         open={randevuDialogOpen}
         onOpenChange={setRandevuDialogOpen}
-        defaultKurum={gorusme.kurum}
+        defaultKurum={kurumAdi}
       />
 
       <EgitimDialog
         open={egitimDialogOpen}
         onOpenChange={setEgitimDialogOpen}
-        defaultKurum={gorusme.kurum}
+        defaultKurum={kurumAdi}
       />
 
       <GorevDialog
@@ -729,8 +977,41 @@ export default function KurumDetayPage() {
           if (!open) setEditingGorev(null);
         }}
         gorev={editingGorev}
-        defaultGorusme={{ id: gorusme.id, kurum: gorusme.kurum }}
+        defaultGorusme={{ id: gorusme.id, kurum: kurumAdi }}
       />
+    </div>
+  );
+}
+
+function LinkMaybe({
+  label,
+  href,
+  ig,
+}: {
+  label: string;
+  href?: string;
+  ig?: boolean;
+}) {
+  const raw = href?.trim();
+  if (!raw) return <InfoItem label={label} value="-" />;
+  const lower = raw.toLowerCase();
+  let url = raw;
+  if (!lower.startsWith("http")) {
+    url = ig
+      ? `https://instagram.com/${raw.replace(/^@/, "")}`
+      : `https://${raw}`;
+  }
+  return (
+    <div className="space-y-1 md:col-span-1">
+      <div className="text-xs uppercase text-muted-foreground">{label}</div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="break-all font-medium text-primary underline underline-offset-2"
+      >
+        {raw}
+      </a>
     </div>
   );
 }

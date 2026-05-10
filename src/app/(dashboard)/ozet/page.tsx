@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpPopover } from "@/components/ui/help-popover";
 import { Gorusme, Randevu, Egitim, EgitimDurumu, Gorev } from "@/lib/types";
 import { subscribeGorusmeler } from "@/lib/gorusmeler";
+import { MILESTONE_TIPLERI } from "@/lib/constants";
+import {
+  averageMilestoneCompletionPercent,
+  getFurthestCompletedMilestoneTip,
+  getResolvedKurumDurumu,
+} from "@/lib/kurum-helpers";
 import { subscribeRandevular } from "@/lib/randevular";
 import { subscribeEgitimler } from "@/lib/egitimler";
 import { subscribeGorevler } from "@/lib/gorevler";
@@ -18,7 +24,6 @@ import {
   ListTodo,
   CircleCheck,
   CircleX,
-  CircleHelp,
   Clock,
   AlertTriangle,
 } from "lucide-react";
@@ -45,16 +50,36 @@ export default function OzetPage() {
     };
   }, [user]);
 
-  // Görüşme istatistikleri
   const toplamKurum = gorusmeler.length;
-  const satinAlan = gorusmeler.filter((g) => g.satisDurumu === "Satın Aldı").length;
-  const satinAlmayan = gorusmeler.filter((g) => g.satisDurumu === "Satın Almadı").length;
-  const kararsiz = gorusmeler.filter((g) => g.satisDurumu === "Kararsız").length;
-  const surecDevam = gorusmeler.filter(
-    (g) => !g.satisDurumu || g.satisDurumu === "Beklemede"
+  const aktifSurecte = gorusmeler.filter(
+    (g) => getResolvedKurumDurumu(g) === "Aktif Süreç"
   ).length;
-  const donusumOrani =
-    toplamKurum > 0 ? Math.round((satinAlan / toplamKurum) * 100) : 0;
+  const kazanildi = gorusmeler.filter(
+    (g) => getResolvedKurumDurumu(g) === "Kazanıldı"
+  ).length;
+  const kaybedildi = gorusmeler.filter(
+    (g) => getResolvedKurumDurumu(g) === "Kaybedildi"
+  ).length;
+  const ortalamaMilestonePct = averageMilestoneCompletionPercent(gorusmeler);
+
+  const pipeline = useMemo(() => {
+    type Tip = (typeof MILESTONE_TIPLERI)[number]["tip"];
+    const byTip = {} as Record<Tip, number>;
+    for (const row of MILESTONE_TIPLERI) byTip[row.tip] = 0;
+    let henuzYok = 0;
+    for (const g of gorusmeler) {
+      const furthest = getFurthestCompletedMilestoneTip(g.milestones);
+      if (furthest === null) henuzYok++;
+      else byTip[furthest]++;
+    }
+    return { byTip, henuzYok };
+  }, [gorusmeler]);
+
+  const maxPipelineBar = Math.max(
+    pipeline.henuzYok,
+    ...Object.values(pipeline.byTip),
+    1
+  );
 
   // Randevu istatistikleri
   const bugunR = randevular.filter((r) => isToday(r.tarih.toDate())).length;
@@ -109,49 +134,65 @@ export default function OzetPage() {
         />
       </div>
 
-      {/* Görüşme İstatistikleri */}
+      {/* Kurum istatistikleri */}
       <section>
         <h2 className="text-lg font-semibold mb-3 text-gray-700">
-          📞 Görüşme İstatistikleri
+          🏛️ Kurum İstatistikleri
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <p className="mb-3 text-sm text-muted-foreground">Toplam {toplamKurum} kurum</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
-            label="Toplam Kurum"
-            value={toplamKurum}
-            icon={<Users className="w-5 h-5" />}
-            color="purple"
-          />
-          <StatCard
-            label="Satın Alan"
-            value={satinAlan}
-            icon={<CircleCheck className="w-5 h-5" />}
-            color="green"
-          />
-          <StatCard
-            label="Satın Almayan"
-            value={satinAlmayan}
-            icon={<CircleX className="w-5 h-5" />}
-            color="red"
-          />
-          <StatCard
-            label="Kararsız"
-            value={kararsiz}
-            icon={<CircleHelp className="w-5 h-5" />}
-            color="orange"
-          />
-          <StatCard
-            label="Süreç Devam"
-            value={surecDevam}
+            label="Aktif Süreçte"
+            value={aktifSurecte}
             icon={<Clock className="w-5 h-5" />}
             color="blue"
           />
           <StatCard
-            label="Dönüşüm Oranı"
-            value={`%${donusumOrani}`}
+            label="Kazanıldı"
+            value={kazanildi}
+            icon={<CircleCheck className="w-5 h-5" />}
+            color="green"
+          />
+          <StatCard
+            label="Kaybedildi"
+            value={kaybedildi}
+            icon={<CircleX className="w-5 h-5" />}
+            color="red"
+          />
+          <StatCard
+            label="Tamamlanma Oranı"
+            value={`%${ortalamaMilestonePct}`}
             icon={<TrendingUp className="w-5 h-5" />}
             color="indigo"
           />
         </div>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-3 text-gray-700">
+          📊 Pipeline (son tamamlanan adım)
+        </h2>
+        <Card className="border">
+          <CardContent className="space-y-4 p-6">
+            <p className="text-sm text-muted-foreground">
+              Her kurum, tamamlanan en ileri milestone sütununa sayılır. Henüz adım işaretlenmemiş
+              kurumlar ayrı gösterilir.
+            </p>
+            <PipelineRow
+              label="Henüz adım yok"
+              count={pipeline.henuzYok}
+              max={maxPipelineBar}
+            />
+            {MILESTONE_TIPLERI.map((m) => (
+              <PipelineRow
+                key={m.tip}
+                label={m.label}
+                count={pipeline.byTip[m.tip]}
+                max={maxPipelineBar}
+              />
+            ))}
+          </CardContent>
+        </Card>
       </section>
 
       {/* Randevular */}
@@ -259,6 +300,32 @@ export default function OzetPage() {
           />
         </div>
       </section>
+    </div>
+  );
+}
+
+function PipelineRow({
+  label,
+  count,
+  max,
+}: {
+  label: string;
+  count: number;
+  max: number;
+}) {
+  const pct = max > 0 ? Math.round((count / max) * 100) : 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between text-sm gap-4">
+        <span className="min-w-0 font-medium">{label}</span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-purple-600 transition-[width]"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }

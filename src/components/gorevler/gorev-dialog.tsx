@@ -25,6 +25,7 @@ import { Gorev, Gorusme } from "@/lib/types";
 import { GOREV_DURUMLARI, ONCELIKLER, EKIP_UYELERI } from "@/lib/constants";
 import { addGorev, updateGorev } from "@/lib/gorevler";
 import { subscribeGorusmeler } from "@/lib/gorusmeler";
+import { getKurumDisplayName } from "@/lib/kurum-helpers";
 import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
 
@@ -73,7 +74,7 @@ export function GorevDialog({ open, onOpenChange, gorev, defaultGorusme }: Props
   const kurumListesi = useMemo(() => {
     const s = kurumSearch.trim().toLowerCase();
     const filtered = gorusmeler.filter((g) =>
-      !s ? true : g.kurum?.toLowerCase().includes(s)
+      !s ? true : getKurumDisplayName(g).toLowerCase().includes(s)
     );
     return filtered;
   }, [gorusmeler, kurumSearch]);
@@ -272,7 +273,7 @@ export function GorevDialog({ open, onOpenChange, gorev, defaultGorusme }: Props
                 setFormData({
                   ...formData,
                   gorusmeId: v,
-                  gorusmeKurum: match?.kurum || "",
+                  gorusmeKurum: match ? getKurumDisplayName(match) : "",
                 });
               }}
             >
@@ -282,7 +283,7 @@ export function GorevDialog({ open, onOpenChange, gorev, defaultGorusme }: Props
               <SelectContent>
                 <SelectItem value={GORUSME_YOK_VALUE}>Bağlantı yok</SelectItem>
                 {kurumListesi.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>{g.kurum}</SelectItem>
+                  <SelectItem key={g.id} value={g.id}>{getKurumDisplayName(g)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

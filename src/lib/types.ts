@@ -1,31 +1,86 @@
 import { Timestamp } from "firebase/firestore";
 
-// ============ GÖRÜŞMELER ============
-export type KurumTipi = "Okul" | "Kurs" | "Bireysel" | "Akademi";
+// ============ KURUMLAR (gorusmeler koleksiyonu) ============
+export type KurumTipi = "Okul" | "Kurs" | "Bireysel" | "Akademi" | "VIP";
+
+export interface KurumKisi {
+  id: string;
+  ad: string;
+  rol?: string;
+  telefon?: string;
+  email?: string;
+  notlar?: string;
+}
+
+export type MilestoneTipi =
+  | "ilk_iletisim"
+  | "tanisma_gorusmesi"
+  | "tanitim_sunum"
+  | "egitim_takvimi"
+  | "kurum_hesabi"
+  | "ilk_egitim"
+  | "aktif_kullanim";
+
+export interface KurumMilestone {
+  tip: MilestoneTipi;
+  tamamlandi: boolean;
+  tamamlanmaTarihi?: Timestamp;
+  tamamlayanUid?: string;
+  tamamlayanAd?: string;
+  not?: string;
+}
+
+export type KurumDurumu =
+  | "Aktif Süreç"
+  | "Beklemede"
+  | "Kazanıldı"
+  | "Kaybedildi"
+  | "Pasif";
+
 export type Durum = "Başlamadı" | "Deneyim Başladı" | "Tamamlandı" | "İptal";
 export type SatisDurumu = "Satın Aldı" | "Satın Almadı" | "Kararsız" | "Beklemede";
 export type Oncelik = "Yüksek" | "Orta" | "Düşük";
 
+/** Firestore koleksiyon adı sabit kalır (gorusmeler); tek kayıt hem kurum hem legacy görüşme. */
 export interface Gorusme {
   id: string;
-  kurum: string;
+
+  /** Ana kurum adı (öncelikli); eski dokümanlarda eksik olabilir. */
+  ad?: string;
   kurumTipi?: KurumTipi;
+  sehir?: string;
+  ilce?: string;
+  webSitesi?: string;
+  instagram?: string;
+  facebook?: string;
+  linkedin?: string;
+  etiketler?: string[];
+  tahminiDeger?: number;
+  kisiler?: KurumKisi[];
+  milestones?: KurumMilestone[];
+  kurumDurumu?: KurumDurumu;
+
+  /** @deprecated görüntüleme için ad || kurum kullanın */
+  kurum?: string;
   ilgiliKisi?: string;
   konumu?: string;
   iletisimNo?: string;
   mail?: string;
-  iletisimeGecen?: string;  // BİLAL, HÜSEYİN, ATAKAN vs.
+  iletisimeGecen?: string;
   araci?: string;
+  /** @deprecated kurumDurumu kullanılmalı */
   durum?: Durum;
   oncelik?: Oncelik;
   baslamaTarihi?: Timestamp | null;
   sonTemasTarihi?: Timestamp | null;
   bitisTarihi?: Timestamp | null;
+  /** @deprecated kurumDurumu ile senkron tutulabilir */
   satisDurumu?: SatisDurumu;
   not?: string;
+
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  createdBy: string;  // user uid
+  createdBy: string;
   createdByName?: string;
 }
 
@@ -68,8 +123,8 @@ export type RandevuDurum = "Planlandı" | "Onaylandı" | "İptal" | "Tamamlandı
 export interface Randevu {
   id: string;
   tarih: Timestamp;
-  baslangicSaati: string;  // "14:30"
-  bitisSaati: string;      // "15:30"
+  baslangicSaati: string;
+  bitisSaati: string;
   kurum: string;
   ilgiliKisi?: string;
   randevuTipi?: RandevuTipi;
@@ -96,10 +151,9 @@ export interface Egitim {
   egitimDurumu?: EgitimDurumu;
   katilimciSayisi?: number;
   sureSaat?: number;
-  // Legacy fields for old records
   ucret?: number;
   tahsilatDurumu?: TahsilatDurumu;
-  geriBildirimPuani?: number;  // 1-5
+  geriBildirimPuani?: number;
   devamEdenIliski?: DevamEdenIliski;
   notlar?: string;
   createdAt: Timestamp;
