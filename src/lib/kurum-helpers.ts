@@ -1,4 +1,5 @@
 import { Timestamp } from "firebase/firestore";
+import { differenceInCalendarDays } from "date-fns";
 import type {
   Gorusme,
   KurumDurumu,
@@ -6,6 +7,7 @@ import type {
   KurumMilestone,
   MilestoneTipi,
 } from "./types";
+import { MILESTONE_TIPLERI } from "./constants";
 
 /** Sabit milestone sırası — pipeline istatistikleri ve birleştirme için. */
 export const MILESTONE_TIP_ORDER: MilestoneTipi[] = [
@@ -81,6 +83,44 @@ export function averageMilestoneCompletionPercent(gorusmeler: Gorusme[]): number
     sum += milestoneCompletionPercent(g.milestones);
   }
   return Math.round(sum / gorusmeler.length);
+}
+
+export function getMilestoneLabel(tip: MilestoneTipi): string {
+  return MILESTONE_TIPLERI.find((m) => m.tip === tip)?.label ?? tip;
+}
+
+export function allMilestonesCompleted(milestones?: KurumMilestone[]): boolean {
+  return countCompletedMilestones(milestones) === MILESTONE_TIP_ORDER.length;
+}
+
+/** Henüz hiçbir milestone işaretlenmemiş. */
+export function isPipelineCardPristine(milestones?: KurumMilestone[]): boolean {
+  return getFurthestCompletedMilestoneTip(milestones) === null;
+}
+
+/** Kanban sütunu: en son tamamlanan adım yoksa “İlk iletişim” sütunu. */
+export function getPipelineColumnTip(milestones?: KurumMilestone[]): MilestoneTipi {
+  return getFurthestCompletedMilestoneTip(milestones) ?? "ilk_iletisim";
+}
+
+/**
+ * İlk işaretlenen milestone tamamlanma tarihi ile son tamamlanan arasındaki gün sayısı.
+ */
+export function pipelineTamamlamaAraligiGun(
+  milestones?: KurumMilestone[]
+): number | null {
+  const merged = mergeMilestones(milestones);
+  let ilk: Date | null = null;
+  let son: Date | null = null;
+  for (const tip of MILESTONE_TIP_ORDER) {
+    const m = merged.find((x) => x.tip === tip);
+    if (!m?.tamamlandi || !m.tamamlanmaTarihi) continue;
+    const d = m.tamamlanmaTarihi.toDate();
+    if (!ilk) ilk = d;
+    son = d;
+  }
+  if (!ilk || !son) return null;
+  return Math.max(0, differenceInCalendarDays(son, ilk));
 }
 
 /** Dialog / liste: birincil iletişim. */

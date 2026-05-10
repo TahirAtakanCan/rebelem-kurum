@@ -7,7 +7,9 @@ import { Header } from "@/components/layout/header";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { subscribeGorevler } from "@/lib/gorevler";
-import { endOfDay, isBefore, isToday } from "date-fns";
+import { subscribeGorusmeler } from "@/lib/gorusmeler";
+import { kritikHatirlatmaOzetSayisi } from "@/lib/hatirlatmalar";
+import { endOfDay, format, isBefore, isToday } from "date-fns";
 import { toast } from "sonner";
 
 export default function DashboardLayout({
@@ -42,6 +44,34 @@ export default function DashboardLayout({
           },
         });
       }
+    });
+    return () => unsub();
+  }, [user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeGorusmeler((gorusmeler) => {
+      if (typeof window === "undefined") return;
+      const gun = format(new Date(), "yyyy-MM-dd");
+      const flag = `rebelem_kritik_hatirlatma_toast_${gun}`;
+      if (sessionStorage.getItem(flag)) return;
+      const { soguyan, tikanma, toplam } =
+        kritikHatirlatmaOzetSayisi(gorusmeler);
+      if (toplam <= 0) return;
+      sessionStorage.setItem(flag, "1");
+      const parca: string[] = [];
+      if (soguyan > 0) parca.push(`${soguyan} soğuyan ilişki`);
+      if (tikanma > 0) parca.push(`${tikanma} süreç tıkanması`);
+      toast.warning(
+        `Önemli: ${toplam} kritik hatırlatma (${parca.join(", ")}).`,
+        {
+          duration: 12_000,
+          action: {
+            label: "Hatırlatmalar",
+            onClick: () => router.push("/hatirlatmalar"),
+          },
+        }
+      );
     });
     return () => unsub();
   }, [user, router]);

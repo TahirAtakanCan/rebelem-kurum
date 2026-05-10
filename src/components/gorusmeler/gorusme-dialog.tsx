@@ -51,8 +51,10 @@ import {
   buildGorusmeSyncPayload,
   initialKisilerFromGorusme,
   kurumDurumuToSatis,
+  getMilestoneLabel,
   mergeMilestones,
 } from "@/lib/kurum-helpers";
+import { logActivity } from "@/lib/aktivite";
 import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -463,7 +465,18 @@ export function GorusmeDialog({
     setSaving(true);
     try {
       if (gorusme) {
+        const oncekiKd = gorusme.kurumDurumu;
         await updateGorusme(gorusme.id, cleanData);
+        const yeniKd = cleanData.kurumDurumu;
+        if (yeniKd && yeniKd !== oncekiKd) {
+          void logActivity({
+            tip: "kurum_durumu",
+            mesaj: `${user.displayName || "Takım"} "${ad.trim()}" kurumunu “${yeniKd}” durumuna aldı`,
+            kullaniciId: user.uid,
+            kullaniciAd: user.displayName || undefined,
+            ilgiliId: gorusme.id,
+          });
+        }
         toast.success("Kurum güncellendi");
         closeAndReset(onOpenChange, {
           setDup: setDuplicateHit,
@@ -509,6 +522,13 @@ export function GorusmeDialog({
           : m
       );
       await updateGorusme(pendingNewId, { milestones });
+      void logActivity({
+        tip: "milestone",
+        mesaj: `${user.displayName || "Takım"} "${ad.trim()}" kurumunda “${getMilestoneLabel("ilk_iletisim")}” adımını işaretledi`,
+        kullaniciId: user.uid,
+        kullaniciAd: user.displayName || undefined,
+        ilgiliId: pendingNewId,
+      });
       toast.success("İlk iletişim kaydedildi");
       closeAndReset(onOpenChange, {
         setDup: setDuplicateHit,

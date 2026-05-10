@@ -97,7 +97,7 @@ export function EgitimDialog({ open, onOpenChange, egitim, defaultKurum }: Props
 
     setSaving(true);
     try {
-      const dataToSave = {
+      const firestorePayload = {
         tarih: Timestamp.fromDate(new Date(formData.tarih)),
         saat: formData.saat || undefined,
         kurum: formData.kurum.trim(),
@@ -113,14 +113,17 @@ export function EgitimDialog({ open, onOpenChange, egitim, defaultKurum }: Props
       };
 
       const cleanData = Object.fromEntries(
-        Object.entries(dataToSave).filter(([, v]) => v !== undefined)
-      ) as Parameters<typeof addEgitim>[0];
+        Object.entries(firestorePayload).filter(([, v]) => v !== undefined)
+      ) as Omit<Parameters<typeof addEgitim>[0], "logOlusturanAd">;
 
       if (egitim) {
         await updateEgitim(egitim.id, cleanData);
         toast.success("Eğitim güncellendi");
       } else {
-        await addEgitim(cleanData);
+        await addEgitim({
+          ...cleanData,
+          logOlusturanAd: user.displayName || undefined,
+        });
         toast.success("Eğitim eklendi");
       }
       onOpenChange(false);

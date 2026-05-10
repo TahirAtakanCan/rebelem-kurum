@@ -91,7 +91,7 @@ export function RandevuDialog({ open, onOpenChange, randevu, defaultKurum }: Pro
 
     setSaving(true);
     try {
-      const dataToSave = {
+      const firestorePayload = {
         tarih: Timestamp.fromDate(new Date(formData.tarih)),
         baslangicSaati: formData.baslangicSaati,
         bitisSaati: formData.bitisSaati,
@@ -105,14 +105,17 @@ export function RandevuDialog({ open, onOpenChange, randevu, defaultKurum }: Pro
       };
 
       const cleanData = Object.fromEntries(
-        Object.entries(dataToSave).filter(([, v]) => v !== undefined)
-      ) as Parameters<typeof addRandevu>[0];
+        Object.entries(firestorePayload).filter(([, v]) => v !== undefined)
+      ) as Omit<Parameters<typeof addRandevu>[0], "logOlusturanAd">;
 
       if (randevu) {
         await updateRandevu(randevu.id, cleanData);
         toast.success("Randevu güncellendi");
       } else {
-        await addRandevu(cleanData);
+        await addRandevu({
+          ...cleanData,
+          logOlusturanAd: user.displayName || undefined,
+        });
         toast.success("Randevu eklendi");
       }
       onOpenChange(false);

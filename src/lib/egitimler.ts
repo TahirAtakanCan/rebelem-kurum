@@ -9,10 +9,20 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { format } from "date-fns";
+import { tr } from "date-fns/locale";
 import { db } from "./firebase";
 import { Egitim } from "./types";
+import { logActivity } from "./aktivite";
 
 const COLLECTION = "egitimler";
+
+export type AddEgitimPayload = Omit<
+  Egitim,
+  "id" | "createdAt" | "updatedAt"
+> & {
+  logOlusturanAd?: string;
+};
 
 export function subscribeEgitimler(callback: (data: Egitim[]) => void) {
   const q = query(collection(db, COLLECTION), orderBy("tarih", "desc"));
@@ -25,14 +35,22 @@ export function subscribeEgitimler(callback: (data: Egitim[]) => void) {
   });
 }
 
-export async function addEgitim(
-  data: Omit<Egitim, "id" | "createdAt" | "updatedAt">
-) {
-  return addDoc(collection(db, COLLECTION), {
-    ...data,
+export async function addEgitim(data: AddEgitimPayload) {
+  const { logOlusturanAd, ...rest } = data;
+  const ref = await addDoc(collection(db, COLLECTION), {
+    ...rest,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  const tarihTxt = format(rest.tarih.toDate(), "d.MM.yyyy", { locale: tr });
+  const kim = logOlusturanAd?.trim() || "Takım";
+  void logActivity({
+    tip: "egitim",
+    mesaj: `${kim} yeni eğitim ekledi: ${rest.kurum} — ${rest.egitimKonusu} (${tarihTxt})`,
+    kullaniciId: rest.createdBy,
+    kullaniciAd: logOlusturanAd,
+  });
+  return ref;
 }
 
 export async function updateEgitim(

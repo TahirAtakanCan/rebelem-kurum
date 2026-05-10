@@ -42,10 +42,12 @@ import {
 } from "@/lib/constants";
 import {
   getKurumDisplayName,
+  getMilestoneLabel,
   getResolvedKurumDurumu,
   mergeMilestones,
   milestoneCompletionPercent,
 } from "@/lib/kurum-helpers";
+import { logActivity } from "@/lib/aktivite";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -294,6 +296,8 @@ export default function KurumDetayPage() {
   const handleMilestoneToggle = async (tip: MilestoneTipi, tamamlandi: boolean) => {
     if (!gorusme || !user) return;
     const merged = mergeMilestones(gorusme.milestones);
+    const onceki = merged.find((m) => m.tip === tip);
+    const ilkKezTamam = tamamlandi && !onceki?.tamamlandi;
     const now = Timestamp.fromDate(new Date());
     const next = merged.map((m) =>
       m.tip === tip
@@ -307,6 +311,16 @@ export default function KurumDetayPage() {
         : m
     );
     await persistMilestones(next);
+    if (ilkKezTamam) {
+      const ad = user.displayName || "Takım";
+      void logActivity({
+        tip: "milestone",
+        mesaj: `${ad} ${getKurumDisplayName(gorusme)} kurumunda “${getMilestoneLabel(tip)}” adımını tamamladı`,
+        kullaniciId: user.uid,
+        kullaniciAd: user.displayName || undefined,
+        ilgiliId: gorusme.id,
+      });
+    }
   };
 
   const handleSaveMilestoneNote = async () => {

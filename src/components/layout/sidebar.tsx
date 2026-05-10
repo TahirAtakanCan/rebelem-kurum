@@ -5,8 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
+  Bell,
   Calendar,
   GraduationCap,
+  GitBranch,
   LayoutDashboard,
   ListTodo,
   Building2,
@@ -16,7 +18,9 @@ import { useAuth } from "@/components/auth/auth-provider";
 
 const menuItems = [
   { href: "/ozet", label: "Özet Panel", icon: LayoutDashboard },
+  { href: "/pipeline", label: "Pipeline", icon: GitBranch },
   { href: "/gorusmeler", label: "Kurumlar", icon: Building2 },
+  { href: "/hatirlatmalar", label: "Hatırlatmalar", icon: Bell },
   { href: "/randevular", label: "Randevular", icon: Calendar },
   { href: "/egitimler", label: "Eğitimler", icon: GraduationCap },
   { href: "/gorevler", label: "Görevler", icon: ListTodo },

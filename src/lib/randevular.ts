@@ -9,10 +9,21 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { format } from "date-fns";
+import { tr } from "date-fns/locale";
 import { db } from "./firebase";
 import { Randevu } from "./types";
+import { logActivity } from "./aktivite";
 
 const COLLECTION = "randevular";
+
+export type AddRandevuPayload = Omit<
+  Randevu,
+  "id" | "createdAt" | "updatedAt"
+> & {
+  /** Firestore’a yazılmaz; aktivite özeti için. */
+  logOlusturanAd?: string;
+};
 
 export function subscribeRandevular(callback: (data: Randevu[]) => void) {
   const q = query(collection(db, COLLECTION), orderBy("tarih", "desc"));
@@ -25,14 +36,22 @@ export function subscribeRandevular(callback: (data: Randevu[]) => void) {
   });
 }
 
-export async function addRandevu(
-  data: Omit<Randevu, "id" | "createdAt" | "updatedAt">
-) {
-  return addDoc(collection(db, COLLECTION), {
-    ...data,
+export async function addRandevu(data: AddRandevuPayload) {
+  const { logOlusturanAd, ...rest } = data;
+  const ref = await addDoc(collection(db, COLLECTION), {
+    ...rest,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  const tarihTxt = format(rest.tarih.toDate(), "d.MM.yyyy", { locale: tr });
+  const kim = logOlusturanAd?.trim() || "Takım";
+  void logActivity({
+    tip: "randevu",
+    mesaj: `${kim} yeni randevu ekledi: ${rest.kurum} — ${tarihTxt} ${rest.baslangicSaati}`,
+    kullaniciId: rest.createdBy,
+    kullaniciAd: logOlusturanAd,
+  });
+  return ref;
 }
 
 export async function updateRandevu(

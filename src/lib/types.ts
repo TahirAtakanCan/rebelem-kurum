@@ -161,6 +161,24 @@ export interface Egitim {
   createdBy: string;
 }
 
+// ============ AKTİVİTE FEED ============
+export type AktiviteTipi =
+  | "milestone"
+  | "kurum_durumu"
+  | "randevu"
+  | "egitim"
+  | "diger";
+
+export interface Aktivite {
+  id: string;
+  tip: AktiviteTipi;
+  mesaj: string;
+  kullaniciId: string;
+  kullaniciAd?: string;
+  ilgiliId?: string;
+  createdAt: Timestamp;
+}
+
 // ============ KULLANICI ============
 export interface AppUser {
   uid: string;

@@ -1,15 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { formatDistanceToNow } from "date-fns";
+import { tr } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpPopover } from "@/components/ui/help-popover";
-import { Gorusme, Randevu, Egitim, EgitimDurumu, Gorev } from "@/lib/types";
+import {
+  Aktivite,
+  Gorusme,
+  Randevu,
+  Egitim,
+  EgitimDurumu,
+  Gorev,
+} from "@/lib/types";
+import { subscribeSonAktiviteler } from "@/lib/aktivite";
 import { subscribeGorusmeler } from "@/lib/gorusmeler";
 import { MILESTONE_TIPLERI } from "@/lib/constants";
 import {
   averageMilestoneCompletionPercent,
   getFurthestCompletedMilestoneTip,
   getResolvedKurumDurumu,
+  pipelineTamamlamaAraligiGun,
 } from "@/lib/kurum-helpers";
 import { subscribeRandevular } from "@/lib/randevular";
 import { subscribeEgitimler } from "@/lib/egitimler";
@@ -26,6 +38,8 @@ import {
   CircleX,
   Clock,
   AlertTriangle,
+  Activity,
+  HeartPulse,
 } from "lucide-react";
 import { endOfDay, isBefore, isToday, isThisWeek, isThisMonth } from "date-fns";
 
@@ -35,6 +49,8 @@ export default function OzetPage() {
   const [randevular, setRandevular] = useState<Randevu[]>([]);
   const [egitimler, setEgitimler] = useState<Egitim[]>([]);
   const [gorevler, setGorevler] = useState<Gorev[]>([]);
+  const [aktiviteler, setAktiviteler] = useState<Aktivite[]>([]);
+  const [aktiviteHazir, setAktiviteHazir] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -48,6 +64,15 @@ export default function OzetPage() {
       u3();
       u4();
     };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeSonAktiviteler((rows) => {
+      setAktiviteler(rows);
+      setAktiviteHazir(true);
+    }, 10);
+    return () => unsub();
   }, [user]);
 
   const toplamKurum = gorusmeler.length;
@@ -80,6 +105,38 @@ export default function OzetPage() {
     ...Object.values(pipeline.byTip),
     1
   );
+
+  const pipelineSagligiYuzdesi =
+    toplamKurum > 0
+      ? Math.round((aktifSurecte / toplamKurum) * 100)
+      : 0;
+
+  const ortPipelineKazanilanGun = useMemo(() => {
+    const kazanilanlar = gorusmeler.filter(
+      (g) => getResolvedKurumDurumu(g) === "Kazanıldı"
+    );
+    const spans = kazanilanlar
+      .map((g) => pipelineTamamlamaAraligiGun(g.milestones))
+      .filter((x): x is number => x != null && x >= 0);
+    if (!spans.length) return null;
+    return Math.round(
+      spans.reduce((a, b) => a + b, 0) / spans.length
+    );
+  }, [gorusmeler]);
+
+  const buHaftaKazanilan = useMemo(() => {
+    return gorusmeler.filter((g) => {
+      if (getResolvedKurumDurumu(g) !== "Kazanıldı") return false;
+      return isThisWeek(g.updatedAt.toDate(), { weekStartsOn: 1 });
+    }).length;
+  }, [gorusmeler]);
+
+  const buAyKazanilan = useMemo(() => {
+    return gorusmeler.filter((g) => {
+      if (getResolvedKurumDurumu(g) !== "Kazanıldı") return false;
+      return isThisMonth(g.updatedAt.toDate());
+    }).length;
+  }, [gorusmeler]);
 
   // Randevu istatistikleri
   const bugunR = randevular.filter((r) => isToday(r.tarih.toDate())).length;
@@ -191,6 +248,107 @@ export default function OzetPage() {
                 max={maxPipelineBar}
               />
             ))}
+            <div className="border-t pt-4">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Pipeline özeti — metrikler
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard
+                  label="Pipeline sağlığı"
+                  value={`%${pipelineSagligiYuzdesi}`}
+                  icon={<HeartPulse className="size-5" />}
+                  color="green"
+                />
+                <StatCard
+                  label="Ort. pipeline süresi"
+                  value={
+                    ortPipelineKazanilanGun != null
+                      ? `${ortPipelineKazanilanGun} gün`
+                      : "—"
+                  }
+                  icon={<TrendingUp className="size-5" />}
+                  color="blue"
+                  hint="Kazanıldı olanlar için ilk işaretlenen ile son işaretlenen milestone arasında geçen gün."
+                />
+                <StatCard
+                  label="Bu hafta kazanıldı"
+                  value={buHaftaKazanilan}
+                  icon={<CircleCheck className="size-5" />}
+                  color="purple"
+                  hint="Kriter: kurum updatedAt tarihi son 7 güne düşüyorsa."
+                />
+                <StatCard
+                  label="Bu ay kazanıldı"
+                  value={buAyKazanilan}
+                  icon={<CircleCheck className="size-5" />}
+                  color="yellow"
+                  hint="Kriter: kurum updatedAt tarihi bu ay içindeyse."
+                />
+              </div>
+              <p className="mt-4 text-[11px] text-muted-foreground">
+                Pipeline sağlığı: Aktif Süreçte olanların toplam kuruma oranı; yüksek
+                pay iş girişi açısından genelde daha iyi. Ortalama pipeline süresi:
+                Kazanıldı olarak işaretlenen kayıtlar için ilk işaretlenen milestone
+                ile son işaretlenen arasında geçen günün ortalaması (hedefe göre elle
+                yorumlar).
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-gray-700">
+          ⚡ Son aktiviteler
+        </h2>
+        <Card className="border">
+          <CardContent className="p-6">
+            {!aktiviteHazir ? (
+              <p className="text-sm text-muted-foreground">Yükleniyor...</p>
+            ) : aktiviteler.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Henüz gösterilecek aktivite kaydı yok — milestone işaretleme veya yeni randevu eğitim ekledikçe görünür (Firestore koleksiyonu: aktiviteler).
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {aktiviteler.map((a) => {
+                  const href = a.ilgiliId
+                    ? `/kurumlar/${a.ilgiliId}`
+                    : null;
+                  const zaman =
+                    a.createdAt && "toDate" in a.createdAt && a.createdAt
+                      ? formatDistanceToNow(a.createdAt.toDate(), {
+                          locale: tr,
+                          addSuffix: true,
+                        })
+                      : null;
+                  return (
+                    <li key={a.id} className="flex gap-3 py-4 first:pt-0">
+                      <Activity className="mt-1 size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1 text-sm leading-relaxed">
+                        <span className="text-foreground">{a.mesaj}</span>
+                        {zaman ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({zaman})
+                          </span>
+                        ) : null}
+                        {href ? (
+                          <>
+                            {" "}
+                            <Link
+                              href={href}
+                              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              Kuruma git
+                            </Link>
+                          </>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -347,12 +505,14 @@ function StatCard({
   icon,
   color,
   big = false,
+  hint,
 }: {
   label: string;
   value: number | string;
   icon: ReactNode;
   color: string;
   big?: boolean;
+  hint?: string;
 }) {
   return (
     <Card className={`${colorClasses[color]} border`}>
@@ -362,7 +522,7 @@ function StatCard({
         </CardTitle>
         <div className="hidden shrink-0 opacity-70 sm:flex sm:items-center">{icon}</div>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 space-y-2">
         <div
           className={
             big
@@ -372,6 +532,9 @@ function StatCard({
         >
           {value}
         </div>
+        {hint ? (
+          <p className="text-[11px] leading-snug opacity-85">{hint}</p>
+        ) : null}
       </CardContent>
     </Card>
   );
