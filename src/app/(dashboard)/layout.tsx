@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { DesktopSidebar, SidebarNav } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { subscribeGorevler } from "@/lib/gorevler";
+import { endOfDay, isBefore, isToday } from "date-fns";
+import { toast } from "sonner";
 
 export default function DashboardLayout({
   children,
@@ -12,7 +16,35 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, loading } = useAuth();
+  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeGorevler((data) => {
+      if (typeof window === "undefined") return;
+      const shown = sessionStorage.getItem("tasksAlertShown");
+      if (shown) return;
+
+      const todayEnd = endOfDay(new Date());
+      const dueCount = data.filter((g) => {
+        if (g.durum === "Tamamlandı" || !g.sonTarih) return false;
+        const due = g.sonTarih.toDate();
+        return isToday(due) || isBefore(due, todayEnd);
+      }).length;
+
+      if (dueCount > 0) {
+        sessionStorage.setItem("tasksAlertShown", "true");
+        toast(`${dueCount} görevin son tarihi geldi/geçti`, {
+          action: {
+            label: "Görüntüle",
+            onClick: () => router.push("/gorevler"),
+          },
+        });
+      }
+    });
+    return () => unsub();
+  }, [user, router]);
 
   if (loading) {
     return (

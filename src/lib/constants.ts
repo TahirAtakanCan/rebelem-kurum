@@ -5,8 +5,9 @@ import {
   Oncelik,
   RandevuTipi,
   RandevuDurum,
-  TahsilatDurumu,
+  EgitimDurumu,
   DevamEdenIliski,
+  GorevDurumu,
 } from "./types";
 
 export const KURUM_TIPLERI: KurumTipi[] = ["Okul", "Kurs", "Bireysel", "Akademi"];
@@ -88,11 +89,11 @@ export const RANDEVU_DURUM_RENKLERI: Record<RandevuDurum, string> = {
   "Ertelendi": "bg-yellow-100 text-yellow-800 border-yellow-200",
 };
 
-export const TAHSILAT_DURUMLARI: TahsilatDurumu[] = [
-  "Tahsil Edildi",
-  "Beklemede",
-  "Gecikmiş",
-  "Faturalandı",
+export const EGITIM_DURUMLARI: EgitimDurumu[] = [
+  "Planlandı",
+  "Tamamlandı",
+  "İptal",
+  "Ertelendi",
 ];
 
 export const DEVAM_EDEN_ILISKILER: DevamEdenIliski[] = [
@@ -102,11 +103,11 @@ export const DEVAM_EDEN_ILISKILER: DevamEdenIliski[] = [
   "Bitti",
 ];
 
-export const TAHSILAT_RENKLERI: Record<TahsilatDurumu, string> = {
-  "Tahsil Edildi": "bg-green-100 text-green-800 border-green-200",
-  "Beklemede": "bg-yellow-100 text-yellow-800 border-yellow-200",
-  "Gecikmiş": "bg-red-100 text-red-800 border-red-200",
-  "Faturalandı": "bg-blue-100 text-blue-800 border-blue-200",
+export const EGITIM_DURUM_RENKLERI: Record<EgitimDurumu, string> = {
+  "Planlandı": "bg-blue-100 text-blue-800 border-blue-200",
+  "Tamamlandı": "bg-green-100 text-green-800 border-green-200",
+  "İptal": "bg-red-100 text-red-800 border-red-200",
+  "Ertelendi": "bg-yellow-100 text-yellow-800 border-yellow-200",
 };
 
 export const ILISKI_RENKLERI: Record<DevamEdenIliski, string> = {
@@ -114,4 +115,16 @@ export const ILISKI_RENKLERI: Record<DevamEdenIliski, string> = {
   "Pasif": "bg-gray-100 text-gray-800 border-gray-200",
   "Yenilenecek": "bg-orange-100 text-orange-800 border-orange-200",
   "Bitti": "bg-red-100 text-red-800 border-red-200",
+};
+
+export const GOREV_DURUMLARI: GorevDurumu[] = [
+  "Bekliyor",
+  "Yapılıyor",
+  "Tamamlandı",
+];
+
+export const GOREV_DURUM_RENKLERI: Record<GorevDurumu, string> = {
+  "Bekliyor": "bg-gray-100 text-gray-800",
+  "Yapılıyor": "bg-blue-100 text-blue-800",
+  "Tamamlandı": "bg-green-100 text-green-800",
 };

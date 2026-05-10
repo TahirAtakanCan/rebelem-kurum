@@ -2,39 +2,46 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gorusme, Randevu, Egitim } from "@/lib/types";
+import { HelpPopover } from "@/components/ui/help-popover";
+import { Gorusme, Randevu, Egitim, EgitimDurumu, Gorev } from "@/lib/types";
 import { subscribeGorusmeler } from "@/lib/gorusmeler";
 import { subscribeRandevular } from "@/lib/randevular";
 import { subscribeEgitimler } from "@/lib/egitimler";
+import { subscribeGorevler } from "@/lib/gorevler";
 import { useAuth } from "@/components/auth/auth-provider";
 import {
   Users,
   TrendingUp,
   Calendar,
   GraduationCap,
+  CheckCircle2,
+  ListTodo,
   CircleCheck,
   CircleX,
   CircleHelp,
   Clock,
-  Wallet,
+  AlertTriangle,
 } from "lucide-react";
-import { isToday, isThisWeek, isThisMonth } from "date-fns";
+import { endOfDay, isBefore, isToday, isThisWeek, isThisMonth } from "date-fns";
 
 export default function OzetPage() {
   const { user } = useAuth();
   const [gorusmeler, setGorusmeler] = useState<Gorusme[]>([]);
   const [randevular, setRandevular] = useState<Randevu[]>([]);
   const [egitimler, setEgitimler] = useState<Egitim[]>([]);
+  const [gorevler, setGorevler] = useState<Gorev[]>([]);
 
   useEffect(() => {
     if (!user) return;
     const u1 = subscribeGorusmeler(setGorusmeler);
     const u2 = subscribeRandevular(setRandevular);
     const u3 = subscribeEgitimler(setEgitimler);
+    const u4 = subscribeGorevler(setGorevler);
     return () => {
       u1();
       u2();
       u3();
+      u4();
     };
   }, [user]);
 
@@ -58,22 +65,48 @@ export default function OzetPage() {
 
   // Eğitim istatistikleri
   const toplamEgitim = egitimler.length;
+  const getDurum = (e: Egitim): EgitimDurumu => e.egitimDurumu || "Tamamlandı";
+  const planlananEgitim = egitimler.filter((e) => getDurum(e) === "Planlandı").length;
+  const tamamlananEgitim = egitimler.filter((e) => getDurum(e) === "Tamamlandı").length;
+  const buAyEgitimler = egitimler.filter((e) => {
+    const durum = getDurum(e);
+    if (durum !== "Planlandı" && durum !== "Tamamlandı") return false;
+    return isThisMonth(e.tarih.toDate());
+  }).length;
   const toplamKatilimci = egitimler.reduce(
     (sum, e) => sum + (e.katilimciSayisi || 0),
     0
   );
   const toplamSaat = egitimler.reduce((sum, e) => sum + (e.sureSaat || 0), 0);
-  const toplamCiro = egitimler.reduce((sum, e) => sum + (e.ucret || 0), 0);
-  const tahsilEdilen = egitimler
-    .filter((e) => e.tahsilatDurumu === "Tahsil Edildi")
-    .reduce((sum, e) => sum + (e.ucret || 0), 0);
-  const bekleyenTahsilat = toplamCiro - tahsilEdilen;
+
+  // Görev istatistikleri
+  const bekleyenGorev = gorevler.filter((g) => g.durum === "Bekliyor").length;
+  const yapiliyorGorev = gorevler.filter((g) => g.durum === "Yapılıyor").length;
+  const bugunBitmeli = gorevler.filter((g) => {
+    if (g.durum === "Tamamlandı" || !g.sonTarih) return false;
+    const due = g.sonTarih.toDate();
+    return isToday(due) || isBefore(due, endOfDay(new Date()));
+  }).length;
+  const buHaftaTamamlanan = gorevler.filter((g) => {
+    if (!g.tamamlandiTarihi) return false;
+    return isThisWeek(g.tamamlandiTarihi.toDate(), { weekStartsOn: 1 });
+  }).length;
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold md:text-3xl">Özet Panel</h1>
-        <p className="text-muted-foreground">Genel durum özeti</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold md:text-3xl">Özet Panel</h1>
+          <p className="text-muted-foreground">Genel durum özeti</p>
+        </div>
+        <HelpPopover
+          items={[
+            "Veriler anlık olarak güncellenir.",
+            "Renkler durumları özetler, kartlar tıklanabilir değildir.",
+            "Görevler bölümündeki uyarı, günü geçen işleri gösterir.",
+            "Detay için ilgili sayfaya sol menüden geç.",
+          ]}
+        />
       </div>
 
       {/* Görüşme İstatistikleri */}
@@ -156,13 +189,31 @@ export default function OzetPage() {
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
+            label="Planlanmış Eğitim"
+            value={planlananEgitim}
+            icon={<Calendar className="w-5 h-5" />}
+            color="blue"
+          />
+          <StatCard
+            label="Tamamlanan Eğitim"
+            value={tamamlananEgitim}
+            icon={<CheckCircle2 className="w-5 h-5" />}
+            color="green"
+          />
+          <StatCard
+            label="Bu Ayki Eğitimler"
+            value={buAyEgitimler}
+            icon={<GraduationCap className="w-5 h-5" />}
+            color="purple"
+          />
+          <StatCard
             label="Toplam Eğitim"
             value={toplamEgitim}
             icon={<GraduationCap className="w-5 h-5" />}
             color="green"
           />
           <StatCard
-            label="Katılımcı"
+            label="Toplam Katılımcı"
             value={toplamKatilimci}
             icon={<Users className="w-5 h-5" />}
             color="blue"
@@ -173,23 +224,38 @@ export default function OzetPage() {
             icon={<Clock className="w-5 h-5" />}
             color="purple"
           />
+        </div>
+      </section>
+
+      {/* Görevler */}
+      <section>
+        <h2 className="text-lg font-semibold mb-3 text-gray-700">
+          📋 Görevler
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
-            label="Toplam Ciro"
-            value={`₺${toplamCiro.toLocaleString("tr-TR")}`}
-            icon={<Wallet className="w-5 h-5" />}
-            color="indigo"
+            label="Bekliyor"
+            value={bekleyenGorev}
+            icon={<ListTodo className="w-5 h-5" />}
+            color="gray"
           />
           <StatCard
-            label="Tahsil Edilen"
-            value={`₺${tahsilEdilen.toLocaleString("tr-TR")}`}
-            icon={<CircleCheck className="w-5 h-5" />}
-            color="green"
-          />
-          <StatCard
-            label="Bekleyen Tahsilat"
-            value={`₺${bekleyenTahsilat.toLocaleString("tr-TR")}`}
+            label="Yapılıyor"
+            value={yapiliyorGorev}
             icon={<Clock className="w-5 h-5" />}
-            color="orange"
+            color="blue"
+          />
+          <StatCard
+            label="Bugün Bitmesi Lazım"
+            value={bugunBitmeli}
+            icon={<AlertTriangle className="w-5 h-5" />}
+            color="red"
+          />
+          <StatCard
+            label="Bu Hafta Tamamlandı"
+            value={buHaftaTamamlanan}
+            icon={<CheckCircle2 className="w-5 h-5" />}
+            color="green"
           />
         </div>
       </section>
@@ -205,6 +271,7 @@ const colorClasses: Record<string, string> = {
   blue: "bg-blue-50 text-blue-700 border-blue-200",
   indigo: "bg-indigo-50 text-indigo-700 border-indigo-200",
   yellow: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  gray: "bg-gray-50 text-gray-700 border-gray-200",
 };
 
 function StatCard({

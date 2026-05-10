@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -20,14 +27,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Plus, Search, MoreVertical, Pencil, Trash2 } from "lucide-react";
-import { Egitim } from "@/lib/types";
+import { DevamEdenIliski, Egitim, EgitimDurumu } from "@/lib/types";
 import { subscribeEgitimler, deleteEgitim } from "@/lib/egitimler";
-import { TAHSILAT_RENKLERI, ILISKI_RENKLERI } from "@/lib/constants";
+import {
+  DEVAM_EDEN_ILISKILER,
+  EGITIM_DURUMLARI,
+  EGITIM_DURUM_RENKLERI,
+  ILISKI_RENKLERI,
+} from "@/lib/constants";
 import { EgitimDialog } from "@/components/egitimler/egitim-dialog";
+import { HelpPopover } from "@/components/ui/help-popover";
 import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { tr } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 export default function EgitimlerPage() {
   const { user } = useAuth();
@@ -36,6 +50,9 @@ export default function EgitimlerPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Egitim | null>(null);
+  const [durumFiltreleri, setDurumFiltreleri] = useState<EgitimDurumu[]>([]);
+  const [iliskiFiltre, setIliskiFiltre] = useState<DevamEdenIliski | "all">("all");
+  const [geriBildirimFiltre, setGeriBildirimFiltre] = useState<string>("all");
 
   useEffect(() => {
     if (!user) return;
@@ -46,20 +63,38 @@ export default function EgitimlerPage() {
     return () => unsub();
   }, [user]);
 
+  const getDurum = (e: Egitim): EgitimDurumu => e.egitimDurumu || "Tamamlandı";
+
+  const toggleDurum = (durum: EgitimDurumu) => {
+    setDurumFiltreleri((prev) =>
+      prev.includes(durum) ? prev.filter((d) => d !== durum) : [...prev, durum]
+    );
+  };
+
   const filtered = egitimler.filter((e) => {
-    if (!search) return true;
     const s = search.toLowerCase();
-    return (
+    const searchMatch =
+      !search ||
       e.kurum?.toLowerCase().includes(s) ||
       e.egitimKonusu?.toLowerCase().includes(s) ||
-      e.egitmen?.toLowerCase().includes(s)
-    );
+      e.egitmen?.toLowerCase().includes(s);
+    if (!searchMatch) return false;
+    const durum = getDurum(e);
+    if (durumFiltreleri.length > 0 && !durumFiltreleri.includes(durum)) return false;
+    if (iliskiFiltre !== "all" && e.devamEdenIliski !== iliskiFiltre) return false;
+    if (geriBildirimFiltre !== "all") {
+      const target = Number(geriBildirimFiltre);
+      if ((e.geriBildirimPuani || 0) !== target) return false;
+    }
+    return true;
   });
 
-  const toplamCiro = egitimler.reduce((sum, e) => sum + (e.ucret || 0), 0);
-  const tahsilEdilen = egitimler
-    .filter((e) => e.tahsilatDurumu === "Tahsil Edildi")
-    .reduce((sum, e) => sum + (e.ucret || 0), 0);
+  const planlanan = egitimler.filter((e) => getDurum(e) === "Planlandı").length;
+  const tamamlanan = egitimler.filter((e) => getDurum(e) === "Tamamlandı").length;
+  const toplamKatilimci = egitimler.reduce(
+    (sum, e) => sum + (e.katilimciSayisi || 0),
+    0
+  );
 
   const handleDelete = async (e: Egitim) => {
     if (!confirm(`"${e.egitimKonusu}" eğitimini silmek istediğinden emin misin?`)) return;
@@ -76,6 +111,20 @@ export default function EgitimlerPage() {
     setDialogOpen(true);
   };
 
+  const getRowClass = (e: Egitim) => {
+    const durum = getDurum(e);
+    if (durum === "Tamamlandı") return "bg-green-50/30 hover:bg-green-50";
+    if (durum === "İptal" || durum === "Ertelendi") return "opacity-60";
+    return "hover:bg-green-50/50";
+  };
+
+  const getCardClass = (e: Egitim) => {
+    const durum = getDurum(e);
+    if (durum === "Tamamlandı") return "border-green-200 bg-green-50/30";
+    if (durum === "İptal" || durum === "Ertelendi") return "opacity-60";
+    return "";
+  };
+
   const emptyMessage = search ? "Sonuç yok" : "Henüz eğitim yok.";
 
   return (
@@ -84,27 +133,34 @@ export default function EgitimlerPage() {
         <div>
           <h1 className="text-2xl font-bold md:text-3xl">Eğitimler</h1>
           <p className="text-muted-foreground">
-            {egitimler.length} eğitim · Ciro:{" "}
-            <span className="font-semibold text-green-700">
-              ₺{toplamCiro.toLocaleString("tr-TR")}
-            </span>{" "}
-            · Tahsil:{" "}
-            <span className="font-semibold text-blue-700">
-              ₺{tahsilEdilen.toLocaleString("tr-TR")}
-            </span>
+            {egitimler.length} eğitim · Planlandı:{" "}
+            <span className="font-semibold text-blue-700">{planlanan}</span> · Tamamlandı:{" "}
+            <span className="font-semibold text-green-700">{tamamlanan}</span> · Toplam
+            Katılımcı: <span className="font-semibold">{toplamKatilimci}</span>
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-          size="lg"
-          className="w-full shrink-0 sm:w-auto"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Yeni Eğitim
-        </Button>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+            size="lg"
+            className="w-full shrink-0 sm:w-auto"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Yeni Eğitim
+          </Button>
+          <HelpPopover
+            items={[
+              "Arama kurum, konu ve eğitmen alanlarını tarar.",
+              "Durum, ilişki ve geri bildirim süzgeçleri üst bölümde.",
+              "Satır veya karta tıklayınca düzenleme açılır.",
+              "Özet rakamları başlıkta; iptal ve ertelenenler soluk görünür.",
+              "Düzenle/sil işlemleri üç nokta menüsünde.",
+            ]}
+          />
+        </div>
       </div>
 
       <div className="relative max-w-md">
@@ -117,19 +173,88 @@ export default function EgitimlerPage() {
         />
       </div>
 
+      <div className="rounded-lg border bg-white p-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">
+              Eğitim Durumu
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {EGITIM_DURUMLARI.map((durum) => {
+                const active = durumFiltreleri.includes(durum);
+                return (
+                  <Button
+                    key={durum}
+                    type="button"
+                    size="sm"
+                    variant={active ? "secondary" : "outline"}
+                    className={active ? EGITIM_DURUM_RENKLERI[durum] : ""}
+                    onClick={() => toggleDurum(durum)}
+                  >
+                    {durum}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase text-muted-foreground">
+                Devam Eden İlişki
+              </div>
+              <Select
+                value={iliskiFiltre}
+                onValueChange={(v) => setIliskiFiltre(v as DevamEdenIliski | "all")}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="Tümü" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tümü</SelectItem>
+                  {DEVAM_EDEN_ILISKILER.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase text-muted-foreground">
+                Geri Bildirim
+              </div>
+              <Select
+                value={geriBildirimFiltre}
+                onValueChange={(v) => setGeriBildirimFiltre(v)}
+              >
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Tümü" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tümü</SelectItem>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <SelectItem key={n} value={n.toString()}>
+                      {"⭐".repeat(n)} ({n})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="hidden overflow-hidden rounded-lg border bg-white md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-green-700">
               <TableRow className="border-b-0 hover:bg-green-700">
                 <TableHead className="font-semibold text-white">Tarih</TableHead>
+                <TableHead className="font-semibold text-white">Saat</TableHead>
                 <TableHead className="font-semibold text-white">Kurum</TableHead>
                 <TableHead className="font-semibold text-white">Konu</TableHead>
                 <TableHead className="font-semibold text-white">Eğitmen</TableHead>
                 <TableHead className="text-right font-semibold text-white">Katılımcı</TableHead>
-                <TableHead className="text-right font-semibold text-white">Saat</TableHead>
-                <TableHead className="text-right font-semibold text-white">Ücret</TableHead>
-                <TableHead className="font-semibold text-white">Tahsilat</TableHead>
+                <TableHead className="text-right font-semibold text-white">Süre</TableHead>
+                <TableHead className="font-semibold text-white">Durum</TableHead>
                 <TableHead className="font-semibold text-white">Geri Bildirim</TableHead>
                 <TableHead className="font-semibold text-white">İlişki</TableHead>
                 <TableHead className="w-12 font-semibold text-white"></TableHead>
@@ -152,26 +277,27 @@ export default function EgitimlerPage() {
                 filtered.map((e) => (
                   <TableRow
                     key={e.id}
-                    className="cursor-pointer hover:bg-green-50/50"
+                    className={cn("cursor-pointer", getRowClass(e))}
                     onClick={() => openEdit(e)}
                   >
                     <TableCell className="font-medium">
                       {format(e.tarih.toDate(), "dd.MM.yyyy", { locale: tr })}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {e.saat || "-"}
                     </TableCell>
                     <TableCell className="font-medium">{e.kurum}</TableCell>
                     <TableCell>{e.egitimKonusu}</TableCell>
                     <TableCell>{e.egitmen || "-"}</TableCell>
                     <TableCell className="text-right">{e.katilimciSayisi || "-"}</TableCell>
                     <TableCell className="text-right">{e.sureSaat || "-"}</TableCell>
-                    <TableCell className="text-right font-mono">
-                      {e.ucret ? `₺${e.ucret.toLocaleString("tr-TR")}` : "-"}
-                    </TableCell>
                     <TableCell>
-                      {e.tahsilatDurumu && (
-                        <Badge variant="outline" className={TAHSILAT_RENKLERI[e.tahsilatDurumu]}>
-                          {e.tahsilatDurumu}
-                        </Badge>
-                      )}
+                      <Badge
+                        variant="outline"
+                        className={EGITIM_DURUM_RENKLERI[getDurum(e)]}
+                      >
+                        {getDurum(e)}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       {e.geriBildirimPuani ? "⭐".repeat(e.geriBildirimPuani) : "-"}
@@ -227,7 +353,7 @@ export default function EgitimlerPage() {
           filtered.map((e) => (
             <Card
               key={e.id}
-              className="cursor-pointer border transition-shadow active:shadow-md"
+              className={cn("cursor-pointer border transition-shadow active:shadow-md", getCardClass(e))}
               onClick={() => openEdit(e)}
             >
               <CardContent className="space-y-3 p-4">
@@ -235,10 +361,17 @@ export default function EgitimlerPage() {
                   <div className="min-w-0 flex-1">
                     <div className="text-sm text-muted-foreground">
                       {format(e.tarih.toDate(), "dd.MM.yyyy", { locale: tr })}
+                      {e.saat ? ` · ${e.saat}` : ""}
                     </div>
                     <div className="font-semibold leading-snug">{e.kurum}</div>
                     <div className="mt-1 text-sm leading-snug">{e.egitimKonusu}</div>
                   </div>
+                  <Badge
+                    variant="outline"
+                    className={EGITIM_DURUM_RENKLERI[getDurum(e)]}
+                  >
+                    {getDurum(e)}
+                  </Badge>
                   <div onClick={(ev) => ev.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -260,15 +393,9 @@ export default function EgitimlerPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {e.ucret != null && e.ucret > 0 && (
-                    <span className="font-mono text-sm font-medium">
-                      ₺{e.ucret.toLocaleString("tr-TR")}
-                    </span>
-                  )}
-                  {e.tahsilatDurumu && (
-                    <Badge variant="outline" className={TAHSILAT_RENKLERI[e.tahsilatDurumu]}>
-                      {e.tahsilatDurumu}
-                    </Badge>
+                  {e.sureSaat && <span className="text-sm">Süre: {e.sureSaat} saat</span>}
+                  {e.katilimciSayisi && (
+                    <span className="text-sm">Katılımcı: {e.katilimciSayisi}</span>
                   )}
                 </div>
               </CardContent>

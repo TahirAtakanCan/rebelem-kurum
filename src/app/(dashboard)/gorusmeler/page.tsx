@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { HelpPopover } from "@/components/ui/help-popover";
 import {
   Table,
   TableBody,
@@ -36,6 +38,7 @@ import { tr } from "date-fns/locale";
 
 export default function GorusmelerPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [gorusmeler, setGorusmeler] = useState<Gorusme[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -65,6 +68,10 @@ export default function GorusmelerPage() {
   const handleEdit = (g: Gorusme) => {
     setEditingGorusme(g);
     setDialogOpen(true);
+  };
+
+  const openDetail = (g: Gorusme) => {
+    router.push(`/kurumlar/${g.id}`);
   };
 
   const handleNew = () => {
@@ -100,10 +107,20 @@ export default function GorusmelerPage() {
             Toplam {gorusmeler.length} kurum
           </p>
         </div>
-        <Button onClick={handleNew} size="lg" className="w-full shrink-0 sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Yeni Görüşme
-        </Button>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <Button onClick={handleNew} size="lg" className="w-full shrink-0 sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Yeni Görüşme
+          </Button>
+          <HelpPopover
+            items={[
+              "Satıra tıklayınca kurum detayına gidersin.",
+              "Düzenle/sil işlemleri üç nokta menüsünde.",
+              "Arama kurum, kişi, telefon ve mail alanlarını tarar.",
+              "Rozetler tip, durum, öncelik ve satış bilgisini gösterir.",
+            ]}
+          />
+        </div>
       </div>
 
       <div className="relative max-w-md">
@@ -150,7 +167,11 @@ export default function GorusmelerPage() {
                 </TableRow>
               ) : (
                 filtered.map((g) => (
-                  <TableRow key={g.id} className="cursor-pointer hover:bg-purple-50/50" onClick={() => handleEdit(g)}>
+                  <TableRow
+                    key={g.id}
+                    className="cursor-pointer hover:bg-purple-50/50"
+                    onClick={() => openDetail(g)}
+                  >
                     <TableCell className="font-medium">{g.kurum}</TableCell>
                     <TableCell>
                       {g.kurumTipi && (
@@ -231,7 +252,7 @@ export default function GorusmelerPage() {
             <Card
               key={g.id}
               className="cursor-pointer transition-shadow active:shadow-md"
-              onClick={() => handleEdit(g)}
+              onClick={() => openDetail(g)}
             >
               <CardContent className="space-y-3 p-4">
                 <div className="flex items-start justify-between gap-2">

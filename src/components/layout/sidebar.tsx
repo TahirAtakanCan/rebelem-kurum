@@ -2,24 +2,40 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Users,
   Calendar,
   GraduationCap,
   LayoutDashboard,
+  ListTodo,
 } from "lucide-react";
+import { subscribeGorevler } from "@/lib/gorevler";
+import { useAuth } from "@/components/auth/auth-provider";
 
 const menuItems = [
   { href: "/ozet", label: "Özet Panel", icon: LayoutDashboard },
   { href: "/gorusmeler", label: "Görüşmeler", icon: Users },
   { href: "/randevular", label: "Randevular", icon: Calendar },
   { href: "/egitimler", label: "Eğitimler", icon: GraduationCap },
+  { href: "/gorevler", label: "Görevler", icon: ListTodo },
 ];
 
 /** Mobil sheet ve masaüstü sidebar için ortak menü */
 export function SidebarNav({ onLinkClick }: { onLinkClick?: () => void }) {
+  const { user } = useAuth();
   const pathname = usePathname();
+  const [aktifGorevSayisi, setAktifGorevSayisi] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeGorevler((data) => {
+      const aktif = data.filter((g) => g.durum !== "Tamamlandı").length;
+      setAktifGorevSayisi(aktif);
+    });
+    return () => unsub();
+  }, [user]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white">
@@ -56,7 +72,14 @@ export function SidebarNav({ onLinkClick }: { onLinkClick?: () => void }) {
               )}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              {item.label}
+              <span className="flex flex-1 items-center justify-between gap-2">
+                {item.label}
+                {item.href === "/gorevler" && aktifGorevSayisi > 0 && (
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-900">
+                    {aktifGorevSayisi}
+                  </span>
+                )}
+              </span>
             </Link>
           );
         })}

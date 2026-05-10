@@ -26,6 +26,39 @@ export interface Gorusme {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;  // user uid
+  createdByName?: string;
+}
+
+export interface KurumNotu {
+  id: string;
+  gorusmeId: string;
+  baslik?: string;
+  icerik: string;
+  createdAt: Timestamp;
+  createdBy: string;
+  createdByName?: string;
+}
+
+// ============ GÖREVLER ============
+export type GorevDurumu = "Bekliyor" | "Yapılıyor" | "Tamamlandı";
+export type GorevOnceligi = "Yüksek" | "Orta" | "Düşük";
+
+export interface Gorev {
+  id: string;
+  baslik: string;
+  aciklama?: string;
+  durum: GorevDurumu;
+  oncelik: GorevOnceligi;
+  atananUid?: string;
+  atananAd?: string;
+  gorusmeId?: string;
+  gorusmeKurum?: string;
+  sonTarih?: Timestamp;
+  tamamlandiTarihi?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string;
+  createdByName?: string;
 }
 
 // ============ RANDEVULAR ============
@@ -50,16 +83,20 @@ export interface Randevu {
 
 // ============ EĞİTİMLER ============
 export type TahsilatDurumu = "Tahsil Edildi" | "Beklemede" | "Gecikmiş" | "Faturalandı";
+export type EgitimDurumu = "Planlandı" | "Tamamlandı" | "İptal" | "Ertelendi";
 export type DevamEdenIliski = "Aktif" | "Pasif" | "Yenilenecek" | "Bitti";
 
 export interface Egitim {
   id: string;
   tarih: Timestamp;
+  saat?: string;
   kurum: string;
   egitimKonusu: string;
   egitmen?: string;
+  egitimDurumu?: EgitimDurumu;
   katilimciSayisi?: number;
   sureSaat?: number;
+  // Legacy fields for old records
   ucret?: number;
   tahsilatDurumu?: TahsilatDurumu;
   geriBildirimPuani?: number;  // 1-5

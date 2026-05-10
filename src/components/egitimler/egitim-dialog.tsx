@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Egitim } from "@/lib/types";
-import { TAHSILAT_DURUMLARI, DEVAM_EDEN_ILISKILER } from "@/lib/constants";
+import { EGITIM_DURUMLARI, DEVAM_EDEN_ILISKILER } from "@/lib/constants";
 import { addEgitim, updateEgitim } from "@/lib/egitimler";
 import { useAuth } from "@/components/auth/auth-provider";
 import { toast } from "sonner";
@@ -31,20 +31,21 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   egitim?: Egitim | null;
+  defaultKurum?: string;
 }
 
-export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
+export function EgitimDialog({ open, onOpenChange, egitim, defaultKurum }: Props) {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     tarih: "",
+    saat: "",
     kurum: "",
     egitimKonusu: "",
     egitmen: "",
+    egitimDurumu: "",
     katilimciSayisi: "",
     sureSaat: "",
-    ucret: "",
-    tahsilatDurumu: "",
     geriBildirimPuani: "",
     devamEdenIliski: "",
     notlar: "",
@@ -54,13 +55,13 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
     if (egitim) {
       setFormData({
         tarih: egitim.tarih.toDate().toISOString().split("T")[0],
+        saat: egitim.saat || "",
         kurum: egitim.kurum || "",
         egitimKonusu: egitim.egitimKonusu || "",
         egitmen: egitim.egitmen || "",
+        egitimDurumu: egitim.egitimDurumu || "Tamamlandı",
         katilimciSayisi: egitim.katilimciSayisi?.toString() || "",
         sureSaat: egitim.sureSaat?.toString() || "",
-        ucret: egitim.ucret?.toString() || "",
-        tahsilatDurumu: egitim.tahsilatDurumu || "",
         geriBildirimPuani: egitim.geriBildirimPuani?.toString() || "",
         devamEdenIliski: egitim.devamEdenIliski || "",
         notlar: egitim.notlar || "",
@@ -68,23 +69,28 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
     } else {
       setFormData({
         tarih: new Date().toISOString().split("T")[0],
-        kurum: "",
+        saat: "",
+        kurum: defaultKurum || "",
         egitimKonusu: "",
         egitmen: "",
+        egitimDurumu: "Planlandı",
         katilimciSayisi: "",
         sureSaat: "",
-        ucret: "",
-        tahsilatDurumu: "",
         geriBildirimPuani: "",
         devamEdenIliski: "",
         notlar: "",
       });
     }
-  }, [egitim, open]);
+  }, [egitim, open, defaultKurum]);
 
   const handleSave = async () => {
-    if (!formData.kurum.trim() || !formData.egitimKonusu.trim()) {
-      toast.error("Kurum ve eğitim konusu zorunlu");
+    if (
+      !formData.kurum.trim() ||
+      !formData.egitimKonusu.trim() ||
+      !formData.tarih ||
+      !formData.egitimDurumu
+    ) {
+      toast.error("Kurum, eğitim konusu, tarih ve durum zorunlu");
       return;
     }
     if (!user) return;
@@ -93,13 +99,13 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
     try {
       const dataToSave = {
         tarih: Timestamp.fromDate(new Date(formData.tarih)),
+        saat: formData.saat || undefined,
         kurum: formData.kurum.trim(),
         egitimKonusu: formData.egitimKonusu.trim(),
         egitmen: formData.egitmen.trim() || undefined,
+        egitimDurumu: formData.egitimDurumu,
         katilimciSayisi: formData.katilimciSayisi ? Number(formData.katilimciSayisi) : undefined,
         sureSaat: formData.sureSaat ? Number(formData.sureSaat) : undefined,
-        ucret: formData.ucret ? Number(formData.ucret) : undefined,
-        tahsilatDurumu: formData.tahsilatDurumu || undefined,
         geriBildirimPuani: formData.geriBildirimPuani ? Number(formData.geriBildirimPuani) : undefined,
         devamEdenIliski: formData.devamEdenIliski || undefined,
         notlar: formData.notlar.trim() || undefined,
@@ -143,6 +149,33 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
               value={formData.tarih}
               onChange={(e) => setFormData({ ...formData, tarih: e.target.value })}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="saat">Saat</Label>
+            <Input
+              id="saat"
+              type="time"
+              value={formData.saat}
+              onChange={(e) => setFormData({ ...formData, saat: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Eğitim Durumu *</Label>
+            <Select
+              value={formData.egitimDurumu || undefined}
+              onValueChange={(v) => setFormData({ ...formData, egitimDurumu: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                {EGITIM_DURUMLARI.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -194,34 +227,6 @@ export function EgitimDialog({ open, onOpenChange, egitim }: Props) {
               value={formData.sureSaat}
               onChange={(e) => setFormData({ ...formData, sureSaat: e.target.value })}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="ucret">Ücret (₺)</Label>
-            <Input
-              id="ucret"
-              type="number"
-              min="0"
-              value={formData.ucret}
-              onChange={(e) => setFormData({ ...formData, ucret: e.target.value })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Tahsilat Durumu</Label>
-            <Select
-              value={formData.tahsilatDurumu || undefined}
-              onValueChange={(v) => setFormData({ ...formData, tahsilatDurumu: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seçin" />
-              </SelectTrigger>
-              <SelectContent>
-                {TAHSILAT_DURUMLARI.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           <div className="space-y-2">

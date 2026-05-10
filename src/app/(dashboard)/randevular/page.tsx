@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { HelpPopover } from "@/components/ui/help-popover";
 import {
   Table,
   TableBody,
@@ -126,10 +127,20 @@ export default function RandevularPage() {
             {randevular.length}
           </p>
         </div>
-        <Button onClick={handleNew} size="lg" className="w-full shrink-0 sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Yeni Randevu
-        </Button>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <Button onClick={handleNew} size="lg" className="w-full shrink-0 sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Yeni Randevu
+          </Button>
+          <HelpPopover
+            items={[
+              "Arama kurum, kişi ve not alanlarını tarar.",
+              "Tarih vurguları bugün ve hafta içini renklendirir.",
+              "Takvime Ekle butonu Google Takvim bağlantısı açar.",
+              "Düzenle/sil işlemleri üç nokta menüsünde.",
+            ]}
+          />
+        </div>
       </div>
 
       <div className="relative max-w-md">

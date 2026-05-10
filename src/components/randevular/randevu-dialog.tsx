@@ -31,9 +31,10 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   randevu?: Randevu | null;
+  defaultKurum?: string;
 }
 
-export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
+export function RandevuDialog({ open, onOpenChange, randevu, defaultKurum }: Props) {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
@@ -67,7 +68,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
         tarih: bugun,
         baslangicSaati: "09:00",
         bitisSaati: "10:00",
-        kurum: "",
+        kurum: defaultKurum || "",
         ilgiliKisi: "",
         randevuTipi: "",
         konumLink: "",
@@ -75,7 +76,7 @@ export function RandevuDialog({ open, onOpenChange, randevu }: Props) {
         notlar: "",
       });
     }
-  }, [randevu, open]);
+  }, [randevu, open, defaultKurum]);
 
   const handleSave = async () => {
     if (!formData.kurum.trim()) {
