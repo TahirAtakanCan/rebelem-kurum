@@ -53,6 +53,7 @@ import {
   kurumDurumuToSatis,
   getMilestoneLabel,
   mergeMilestones,
+  milestonesArrayForFirestore,
 } from "@/lib/kurum-helpers";
 import { logActivity } from "@/lib/aktivite";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -521,7 +522,9 @@ export function GorusmeDialog({
             }
           : m
       );
-      await updateGorusme(pendingNewId, { milestones });
+      await updateGorusme(pendingNewId, {
+        milestones: milestonesArrayForFirestore(milestones),
+      });
       void logActivity({
         tip: "milestone",
         mesaj: `${user.displayName || "Takım"} "${ad.trim()}" kurumunda “${getMilestoneLabel("ilk_iletisim")}” adımını işaretledi`,

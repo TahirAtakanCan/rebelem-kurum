@@ -46,8 +46,11 @@ import {
   getResolvedKurumDurumu,
   mergeMilestones,
   milestoneCompletionPercent,
+  applyMilestoneToggle,
+  milestonesArrayForFirestore,
 } from "@/lib/kurum-helpers";
 import { logActivity } from "@/lib/aktivite";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -124,10 +127,13 @@ export default function KurumDetayPage() {
   const [milestoneNoteTip, setMilestoneNoteTip] = useState<MilestoneTipi | null>(null);
   const [milestoneNoteDraft, setMilestoneNoteDraft] = useState("");
   const [savingMilestone, setSavingMilestone] = useState(false);
+  const [milestoneToggleBusy, setMilestoneToggleBusy] = useState(false);
+  const [kurumDetayTab, setKurumDetayTab] = useState("bilgiler");
 
-  const loadGorusme = useCallback(async () => {
+  const loadGorusme = useCallback(async (options?: { silent?: boolean }) => {
     if (!gorusmeId) return;
-    setLoadingGorusme(true);
+    const silent = options?.silent === true;
+    if (!silent) setLoadingGorusme(true);
     try {
       const snapshot = await getDoc(doc(db, "gorusmeler", gorusmeId));
       if (!snapshot.exists()) {
@@ -141,7 +147,7 @@ export default function KurumDetayPage() {
       setNotFound(true);
       setGorusme(null);
     } finally {
-      setLoadingGorusme(false);
+      if (!silent) setLoadingGorusme(false);
     }
   }, [gorusmeId]);
 
@@ -149,6 +155,10 @@ export default function KurumDetayPage() {
     if (!user || !gorusmeId) return;
     loadGorusme();
   }, [gorusmeId, user, loadGorusme]);
+
+  useEffect(() => {
+    setKurumDetayTab("bilgiler");
+  }, [gorusmeId]);
 
   useEffect(() => {
     if (!user) return;
@@ -289,8 +299,9 @@ export default function KurumDetayPage() {
 
   const persistMilestones = async (next: KurumMilestone[]) => {
     if (!gorusmeId) return;
-    await updateGorusme(gorusmeId, { milestones: next });
-    await loadGorusme();
+    const cleaned = milestonesArrayForFirestore(next);
+    await updateGorusme(gorusmeId, { milestones: cleaned });
+    await loadGorusme({ silent: true });
   };
 
   const handleMilestoneToggle = async (tip: MilestoneTipi, tamamlandi: boolean) => {
@@ -299,27 +310,25 @@ export default function KurumDetayPage() {
     const onceki = merged.find((m) => m.tip === tip);
     const ilkKezTamam = tamamlandi && !onceki?.tamamlandi;
     const now = Timestamp.fromDate(new Date());
-    const next = merged.map((m) =>
-      m.tip === tip
-        ? {
-            ...m,
-            tamamlandi,
-            tamamlanmaTarihi: tamamlandi ? now : undefined,
-            tamamlayanUid: tamamlandi ? user.uid : undefined,
-            tamamlayanAd: tamamlandi ? user.displayName || undefined : undefined,
-          }
-        : m
-    );
-    await persistMilestones(next);
-    if (ilkKezTamam) {
-      const ad = user.displayName || "Takım";
-      void logActivity({
-        tip: "milestone",
-        mesaj: `${ad} ${getKurumDisplayName(gorusme)} kurumunda “${getMilestoneLabel(tip)}” adımını tamamladı`,
-        kullaniciId: user.uid,
-        kullaniciAd: user.displayName || undefined,
-        ilgiliId: gorusme.id,
-      });
+    const next = applyMilestoneToggle(merged, tip, tamamlandi, now, user);
+    setMilestoneToggleBusy(true);
+    try {
+      await persistMilestones(next);
+      if (ilkKezTamam) {
+        const ad = user.displayName || "Takım";
+        void logActivity({
+          tip: "milestone",
+          mesaj: `${ad} ${getKurumDisplayName(gorusme)} kurumunda “${getMilestoneLabel(tip)}” adımını tamamladı`,
+          kullaniciId: user.uid,
+          kullaniciAd: user.displayName || undefined,
+          ilgiliId: gorusme.id,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Milestone güncellenemedi. Bağlantınızı kontrol edin.");
+    } finally {
+      setMilestoneToggleBusy(false);
     }
   };
 
@@ -429,7 +438,11 @@ export default function KurumDetayPage() {
         )}
       </div>
 
-      <Tabs defaultValue="bilgiler" className="gap-6">
+      <Tabs
+        value={kurumDetayTab}
+        onValueChange={setKurumDetayTab}
+        className="gap-6"
+      >
         <div className="overflow-x-auto">
           <TabsList className="min-w-max">
             <TabsTrigger value="bilgiler">Bilgiler</TabsTrigger>
@@ -561,6 +574,7 @@ export default function KurumDetayPage() {
                           type="checkbox"
                           className="mt-1 h-4 w-4 shrink-0 accent-green-600"
                           checked={tam}
+                          disabled={milestoneToggleBusy || savingMilestone}
                           onChange={(e) =>
                             handleMilestoneToggle(def.tip, e.target.checked)
                           }
@@ -579,7 +593,8 @@ export default function KurumDetayPage() {
                           )}
                           {!tam && (
                             <div className="text-xs font-medium text-muted-foreground">
-                              İşaretleyerek tamamlanmış yap
+                              İşaretleyerek tamamlayın; kaldırınca bu adım ve sonrasındaki
+                              adımlar da sıfırlanır.
                             </div>
                           )}
                           {m?.not ? (

@@ -123,6 +123,70 @@ export function pipelineTamamlamaAraligiGun(
   return Math.max(0, differenceInCalendarDays(son, ilk));
 }
 
+/**
+ * Firestore `undefined` değerlerini kabul etmediği için milestone'u yalnızca tanımlı alanlarla üretir.
+ * İşaret kaldırırken tamamlanma alanlarını tamamen çıkarır.
+ */
+export function milestoneSnapshotForWrite(m: KurumMilestone): KurumMilestone {
+  const out: KurumMilestone = {
+    tip: m.tip,
+    tamamlandi: Boolean(m.tamamlandi),
+  };
+  const n = m.not?.trim();
+  if (n) out.not = n;
+  if (out.tamamlandi && m.tamamlanmaTarihi) {
+    out.tamamlanmaTarihi = m.tamamlanmaTarihi;
+    if (m.tamamlayanUid) out.tamamlayanUid = m.tamamlayanUid;
+    if (m.tamamlayanAd) out.tamamlayanAd = m.tamamlayanAd;
+  }
+  return out;
+}
+
+export function milestonesArrayForFirestore(
+  milestones: KurumMilestone[]
+): KurumMilestone[] {
+  return milestones.map(milestoneSnapshotForWrite);
+}
+
+/**
+ * Checkbox: tamamlanınca yalnız o adım; kaldırılınca bu adım ve sonrasındaki tüm adımlar sıfırlanır.
+ */
+export function applyMilestoneToggle(
+  merged: KurumMilestone[],
+  tip: MilestoneTipi,
+  tamamlandi: boolean,
+  now: Timestamp,
+  user: { uid: string; displayName: string | null | undefined }
+): KurumMilestone[] {
+  const tipIdx = MILESTONE_TIP_ORDER.indexOf(tip);
+  if (tipIdx < 0) return milestonesArrayForFirestore(merged);
+
+  return merged.map((m) => {
+    const mIdx = MILESTONE_TIP_ORDER.indexOf(m.tip);
+    if (!tamamlandi) {
+      if (mIdx >= tipIdx) {
+        return milestoneSnapshotForWrite({
+          tip: m.tip,
+          tamamlandi: false,
+          not: m.not,
+        });
+      }
+      return milestoneSnapshotForWrite(m);
+    }
+    if (m.tip === tip) {
+      return milestoneSnapshotForWrite({
+        tip: m.tip,
+        tamamlandi: true,
+        tamamlanmaTarihi: now,
+        tamamlayanUid: user.uid,
+        tamamlayanAd: user.displayName || undefined,
+        not: m.not,
+      });
+    }
+    return milestoneSnapshotForWrite(m);
+  });
+}
+
 /** Dialog / liste: birincil iletişim. */
 export function getAnaKisiAd(g: Gorusme): string {
   return g.kisiler?.[0]?.ad?.trim() || g.ilgiliKisi?.trim() || "-";

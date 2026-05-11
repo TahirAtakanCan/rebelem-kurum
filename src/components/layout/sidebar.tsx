@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   Bell,
   Calendar,
+  CalendarDays,
   GraduationCap,
   GitBranch,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import { subscribeGorevler } from "@/lib/gorevler";
 import { useAuth } from "@/components/auth/auth-provider";
 
 const menuItems = [
+  { href: "/gunluk", label: "Günlük", icon: CalendarDays },
   { href: "/ozet", label: "Özet Panel", icon: LayoutDashboard },
   { href: "/pipeline", label: "Pipeline", icon: GitBranch },
   { href: "/gorusmeler", label: "Kurumlar", icon: Building2 },
