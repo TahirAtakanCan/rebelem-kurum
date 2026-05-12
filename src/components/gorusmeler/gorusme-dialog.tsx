@@ -36,12 +36,9 @@ import type {
   KurumKisi,
   KurumMilestone,
   KurumTipi,
-  SatisDurumu,
 } from "@/lib/types";
 import {
   KURUM_TIPLERI,
-  DURUMLAR,
-  SATIS_DURUMLARI,
   ONCELIKLER,
   EKIP_UYELERI,
   KURUM_DURUMLARI,
@@ -76,8 +73,6 @@ const EMPTY_KT = "__empty_kt__";
 const EMPTY_KD = "__empty_kd__";
 const EMPTY_ON = "__empty_on__";
 const EMPTY_IG = "__empty_ig__";
-const EMPTY_DURUM = "__empty_durum__";
-const EMPTY_SATIS = "__empty_satis__";
 
 const LS_LAST_CITY = "rebelem_lastSelectedCity";
 
@@ -160,11 +155,9 @@ export function GorusmeDialog({
   const [iletisimeGecen, setIletisimeGecen] = useState(EMPTY_IG);
   const [araci, setAraci] = useState("");
   const [konumu, setKonumu] = useState("");
-  const [durumLegacy, setDurumLegacy] = useState(EMPTY_DURUM);
   const [baslamaTarihi, setBaslamaTarihi] = useState("");
   const [sonTemasTarihi, setSonTemasTarihi] = useState("");
   const [bitisTarihi, setBitisTarihi] = useState("");
-  const [satisLegacy, setSatisLegacy] = useState(EMPTY_SATIS);
 
   const [duplicateHit, setDuplicateHit] = useState<Gorusme | null>(null);
   const [pendingNewId, setPendingNewId] = useState<string | null>(null);
@@ -252,7 +245,6 @@ export function GorusmeDialog({
       setIletisimeGecen(gorusme.iletisimeGecen || EMPTY_IG);
       setAraci(gorusme.araci || "");
       setKonumu(gorusme.konumu || "");
-      setDurumLegacy(gorusme.durum || EMPTY_DURUM);
       setBaslamaTarihi(
         gorusme.baslamaTarihi
           ? gorusme.baslamaTarihi.toDate().toISOString().split("T")[0]
@@ -268,7 +260,6 @@ export function GorusmeDialog({
           ? gorusme.bitisTarihi.toDate().toISOString().split("T")[0]
           : ""
       );
-      setSatisLegacy(gorusme.satisDurumu || EMPTY_SATIS);
       prevSehirRef.current = gorusme.sehir || "";
     } else {
       setAd("");
@@ -297,11 +288,9 @@ export function GorusmeDialog({
       setIletisimeGecen(EMPTY_IG);
       setAraci("");
       setKonumu("");
-      setDurumLegacy(EMPTY_DURUM);
       setBaslamaTarihi("");
       setSonTemasTarihi("");
       setBitisTarihi("");
-      setSatisLegacy(EMPTY_SATIS);
       prevSehirRef.current =
         lastCity && ILLER_ADLARI.includes(lastCity) ? lastCity : "";
     }
@@ -378,7 +367,7 @@ export function GorusmeDialog({
 
     const ek = effectiveKisiler(kisiler);
     if (ek.length === 0) {
-      toast.warning("İletişim kişisi eklemedin; eski kişi bilgisi korunur.");
+      toast.warning("İletişim kişisi eklemedin; kayıt yine de güncellenecek.");
     }
 
     const tags = dedupeEtiketler(
@@ -405,11 +394,6 @@ export function GorusmeDialog({
     });
 
     const forcedSatis = kurumDurumuToSatis(kd);
-    const resolvedSatis: SatisDurumu | undefined = forcedSatis
-      ? forcedSatis
-      : satisLegacy !== EMPTY_SATIS
-        ? (satisLegacy as SatisDurumu)
-        : undefined;
 
     const kisilerToStore: KurumKisi[] | undefined = ek.length
       ? ek.map((k) => ({
@@ -440,7 +424,6 @@ export function GorusmeDialog({
       iletisimeGecen: iletisimeGecen === EMPTY_IG ? undefined : iletisimeGecen,
       araci: araci.trim() || undefined,
       konumu: konumu.trim() || undefined,
-      durum: durumLegacy === EMPTY_DURUM ? undefined : durumLegacy,
 
       baslamaTarihi: baslamaTarihi
         ? Timestamp.fromDate(new Date(baslamaTarihi))
@@ -452,7 +435,7 @@ export function GorusmeDialog({
         ? Timestamp.fromDate(new Date(bitisTarihi))
         : null,
 
-      ...(resolvedSatis ? { satisDurumu: resolvedSatis } : {}),
+      ...(forcedSatis ? { satisDurumu: forcedSatis } : {}),
       oncelik:
         oncelik === EMPTY_ON
           ? undefined
@@ -736,7 +719,7 @@ export function GorusmeDialog({
 
               <details className="rounded-md border bg-muted/30 p-3 text-sm">
                 <summary className="cursor-pointer font-medium">
-                  Ekip ve eski süreç alanları
+                  Ekip ve takip tarihleri
                 </summary>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
@@ -767,44 +750,12 @@ export function GorusmeDialog({
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="konumu">Konumu (eski alan)</Label>
+                    <Label htmlFor="konumu">Konum / adres</Label>
                     <Input
                       id="konumu"
                       value={konumu}
                       onChange={(e) => setKonumu(e.target.value)}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Eski süreç durumu</Label>
-                    <Select value={durumLegacy} onValueChange={setDurumLegacy}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seçin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={EMPTY_DURUM}>Belirtilmedi</SelectItem>
-                        {DURUMLAR.map((d) => (
-                          <SelectItem key={d} value={d}>
-                            {d}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Satış (legacy)</Label>
-                    <Select value={satisLegacy} onValueChange={setSatisLegacy}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seçin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={EMPTY_SATIS}>Belirtilmedi</SelectItem>
-                        {SATIS_DURUMLARI.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="baslama">Başlama Tarihi</Label>
@@ -840,8 +791,8 @@ export function GorusmeDialog({
             <TabsContent value="kisiler" className="space-y-4">
               {kisiWarning && (
                 <p className="text-sm text-amber-800">
-                  Henüz geçerli bir kişi yok. Kayıtta eski telefon / isim alanları
-                  varsa korunur; yeni kayıtlar için kişi eklemen önerilir.
+                  Henüz geçerli bir kişi yok; liste ve aramada eksik bilgi görünebilir.
+                  Kişi eklemen önerilir.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">

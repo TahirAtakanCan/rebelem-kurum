@@ -32,11 +32,9 @@ export function exportGorusmelerToCsv(gorusmeler: Gorusme[], filename = "kurumla
     "Ana Mail",
     "Kurum Tipi",
     "İletişime Geçen",
-    "Eski Durum",
     "Öncelik",
     "Konumu",
     "Aracı",
-    "Satış Durumu (legacy)",
     "Satır Notu",
     "ID",
   ];
@@ -63,11 +61,9 @@ export function exportGorusmelerToCsv(gorusmeler: Gorusme[], filename = "kurumla
       ana?.email || g.mail || "",
       g.kurumTipi || "",
       g.iletisimeGecen || "",
-      g.durum || "",
       g.oncelik || "",
       g.konumu || "",
       g.araci || "",
-      g.satisDurumu || "",
       g.not || "",
       g.id,
     ];

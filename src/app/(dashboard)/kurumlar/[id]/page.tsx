@@ -29,7 +29,6 @@ import {
   updateKurumNotu,
 } from "@/lib/kurum-notlari";
 import {
-  DURUM_RENKLERI,
   EGITIM_DURUM_RENKLERI,
   GOREV_DURUM_RENKLERI,
   ILISKI_RENKLERI,
@@ -38,7 +37,6 @@ import {
   MILESTONE_TIPLERI,
   ONCELIK_RENKLERI,
   RANDEVU_DURUM_RENKLERI,
-  SATIS_RENKLERI,
 } from "@/lib/constants";
 import {
   getKurumDisplayName,
@@ -84,6 +82,19 @@ import { EgitimDialog } from "@/components/egitimler/egitim-dialog";
 import { GorevDialog } from "@/components/gorevler/gorev-dialog";
 import { ArrowLeft, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 
+/** `datetime-local` için yerel `YYYY-MM-DDTHH:mm` */
+function toDatetimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseDatetimeLocalInput(s: string): Date | null {
+  const t = s.trim();
+  if (!t) return null;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 const gorevDurumlari: GorevDurumu[] = ["Bekliyor", "Yapılıyor", "Tamamlandı"];
 
 export default function KurumDetayPage() {
@@ -126,6 +137,10 @@ export default function KurumDetayPage() {
   const [milestoneNoteOpen, setMilestoneNoteOpen] = useState(false);
   const [milestoneNoteTip, setMilestoneNoteTip] = useState<MilestoneTipi | null>(null);
   const [milestoneNoteDraft, setMilestoneNoteDraft] = useState("");
+  const [milestoneTamamlanmaDraft, setMilestoneTamamlanmaDraft] = useState("");
+  const [milestoneCompleteOpen, setMilestoneCompleteOpen] = useState(false);
+  const [milestoneCompleteTip, setMilestoneCompleteTip] = useState<MilestoneTipi | null>(null);
+  const [milestoneCompleteAtLocal, setMilestoneCompleteAtLocal] = useState("");
   const [savingMilestone, setSavingMilestone] = useState(false);
   const [milestoneToggleBusy, setMilestoneToggleBusy] = useState(false);
   const [kurumDetayTab, setKurumDetayTab] = useState("bilgiler");
@@ -304,12 +319,17 @@ export default function KurumDetayPage() {
     await loadGorusme({ silent: true });
   };
 
-  const handleMilestoneToggle = async (tip: MilestoneTipi, tamamlandi: boolean) => {
+  const handleMilestoneToggle = async (
+    tip: MilestoneTipi,
+    tamamlandi: boolean,
+    tamamlanmaAni?: Date
+  ) => {
     if (!gorusme || !user) return;
     const merged = mergeMilestones(gorusme.milestones);
     const onceki = merged.find((m) => m.tip === tip);
     const ilkKezTamam = tamamlandi && !onceki?.tamamlandi;
-    const now = Timestamp.fromDate(new Date());
+    const when = tamamlanmaAni ?? new Date();
+    const now = Timestamp.fromDate(when);
     const next = applyMilestoneToggle(merged, tip, tamamlandi, now, user);
     setMilestoneToggleBusy(true);
     try {
@@ -337,14 +357,40 @@ export default function KurumDetayPage() {
     setSavingMilestone(true);
     try {
       const merged = mergeMilestones(gorusme.milestones);
-      const next = merged.map((m) =>
-        m.tip === milestoneNoteTip ? { ...m, not: milestoneNoteDraft.trim() || undefined } : m
-      );
+      const tsParsed = parseDatetimeLocalInput(milestoneTamamlanmaDraft);
+      const next = merged.map((m) => {
+        if (m.tip !== milestoneNoteTip) return m;
+        const not = milestoneNoteDraft.trim() || undefined;
+        if (!m.tamamlandi) {
+          return { ...m, not };
+        }
+        const tamamlanmaTarihi =
+          tsParsed != null
+            ? Timestamp.fromDate(tsParsed)
+            : m.tamamlanmaTarihi;
+        return {
+          ...m,
+          not,
+          ...(tamamlanmaTarihi ? { tamamlanmaTarihi } : {}),
+        };
+      });
       await persistMilestones(next);
       setMilestoneNoteOpen(false);
     } finally {
       setSavingMilestone(false);
     }
+  };
+
+  const handleConfirmMilestoneComplete = async () => {
+    if (!milestoneCompleteTip) return;
+    const d = parseDatetimeLocalInput(milestoneCompleteAtLocal);
+    if (!d) {
+      toast.error("Geçerli bir tarih ve saat seçin.");
+      return;
+    }
+    await handleMilestoneToggle(milestoneCompleteTip, true, d);
+    setMilestoneCompleteOpen(false);
+    setMilestoneCompleteTip(null);
   };
 
   const milestonesMerged = useMemo(
@@ -421,19 +467,9 @@ export default function KurumDetayPage() {
             {gorusme.kurumTipi}
           </Badge>
         )}
-        {gorusme.durum && (
-          <Badge variant="outline" className={DURUM_RENKLERI[gorusme.durum]}>
-            Eski süreç: {gorusme.durum}
-          </Badge>
-        )}
         {gorusme.oncelik && (
           <Badge variant="outline" className={ONCELIK_RENKLERI[gorusme.oncelik]}>
             {gorusme.oncelik}
-          </Badge>
-        )}
-        {!gorusme.kurumDurumu && gorusme.satisDurumu && (
-          <Badge variant="outline" className={SATIS_RENKLERI[gorusme.satisDurumu]}>
-            Legacy satış: {gorusme.satisDurumu}
           </Badge>
         )}
       </div>
@@ -514,13 +550,10 @@ export default function KurumDetayPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Ek bilgiler (legacy ve süreç)</CardTitle>
+                <CardTitle>Takip ve ekip</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 text-sm md:grid-cols-2">
-                <InfoItem label="İlk kişi (legacy)" value={gorusme.ilgiliKisi || "-"} />
-                <InfoItem label="Konumu" value={gorusme.konumu || "-"} />
-                <InfoItem label="Telefon (legacy)" value={gorusme.iletisimNo || "-"} />
-                <InfoItem label="Mail (legacy)" value={gorusme.mail || "-"} />
+                <InfoItem label="Konum" value={gorusme.konumu || "-"} />
                 <InfoItem label="İletişime Geçen" value={gorusme.iletisimeGecen || "-"} />
                 <InfoItem label="Aracı" value={gorusme.araci || "-"} />
                 <InfoItem label="Başlama Tarihi" value={formatDate(gorusme.baslamaTarihi)} />
@@ -573,11 +606,22 @@ export default function KurumDetayPage() {
                         <input
                           type="checkbox"
                           className="mt-1 h-4 w-4 shrink-0 accent-green-600"
-                          checked={tam}
-                          disabled={milestoneToggleBusy || savingMilestone}
-                          onChange={(e) =>
-                            handleMilestoneToggle(def.tip, e.target.checked)
+                          checked={
+                            tam ||
+                            (milestoneCompleteOpen && milestoneCompleteTip === def.tip)
                           }
+                          disabled={milestoneToggleBusy || savingMilestone}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setMilestoneCompleteTip(def.tip);
+                              setMilestoneCompleteAtLocal(
+                                toDatetimeLocalValue(new Date())
+                              );
+                              setMilestoneCompleteOpen(true);
+                            } else {
+                              void handleMilestoneToggle(def.tip, false);
+                            }
+                          }}
                         />
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="font-medium">{def.label}</div>
@@ -593,8 +637,8 @@ export default function KurumDetayPage() {
                           )}
                           {!tam && (
                             <div className="text-xs font-medium text-muted-foreground">
-                              İşaretleyerek tamamlayın; kaldırınca bu adım ve sonrasındaki
-                              adımlar da sıfırlanır.
+                              İşaretleyince tamamlanma tarihi ve saatini seçebilirsiniz;
+                              kaldırınca bu adım ve sonrası sıfırlanır.
                             </div>
                           )}
                           {m?.not ? (
@@ -610,10 +654,15 @@ export default function KurumDetayPage() {
                             onClick={() => {
                               setMilestoneNoteTip(def.tip);
                               setMilestoneNoteDraft(m?.not || "");
+                              setMilestoneTamamlanmaDraft(
+                                tam && m?.tamamlanmaTarihi
+                                  ? toDatetimeLocalValue(m.tamamlanmaTarihi.toDate())
+                                  : ""
+                              );
                               setMilestoneNoteOpen(true);
                             }}
                           >
-                            Notu düzenle
+                            Not ve tarih
                           </Button>
                         </div>
                       </div>
@@ -975,18 +1024,83 @@ export default function KurumDetayPage() {
         allKurumlar={allGorusmelerForDup}
       />
 
+      <Dialog
+        open={milestoneCompleteOpen}
+        onOpenChange={(o) => {
+          setMilestoneCompleteOpen(o);
+          if (!o) setMilestoneCompleteTip(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adımı tamamla</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="milestone-complete-at">Tamamlanma tarihi ve saati</Label>
+            <Input
+              id="milestone-complete-at"
+              type="datetime-local"
+              value={milestoneCompleteAtLocal}
+              onChange={(e) => setMilestoneCompleteAtLocal(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Varsayılan şu an; geçmişe çekmek için değiştirebilirsiniz.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMilestoneCompleteOpen(false)}
+              disabled={milestoneToggleBusy}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={() => void handleConfirmMilestoneComplete()}
+              disabled={milestoneToggleBusy}
+            >
+              {milestoneToggleBusy ? "Kaydediliyor..." : "Kaydet"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={milestoneNoteOpen} onOpenChange={setMilestoneNoteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adım notu</DialogTitle>
+            <DialogTitle>Adım notu ve tamamlanma</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label>Not</Label>
-            <Textarea
-              rows={4}
-              value={milestoneNoteDraft}
-              onChange={(e) => setMilestoneNoteDraft(e.target.value)}
-            />
+          <div className="space-y-4 py-2">
+            {milestoneNoteTip &&
+              milestonesMerged.find((x) => x.tip === milestoneNoteTip)?.tamamlandi && (
+                <div className="space-y-2">
+                  <Label htmlFor="milestone-tamamlanma">Tamamlanma tarihi ve saati</Label>
+                  <Input
+                    id="milestone-tamamlanma"
+                    type="datetime-local"
+                    value={milestoneTamamlanmaDraft}
+                    onChange={(e) => setMilestoneTamamlanmaDraft(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Geçmişe veya bugüne göre düzeltmek için kullanın.
+                  </p>
+                </div>
+              )}
+            <div className="space-y-2">
+              <Label>Not</Label>
+              <Textarea
+                rows={4}
+                value={milestoneNoteDraft}
+                onChange={(e) => setMilestoneNoteDraft(e.target.value)}
+              />
+            </div>
+            {milestoneNoteTip &&
+              !milestonesMerged.find((x) => x.tip === milestoneNoteTip)?.tamamlandi && (
+                <p className="text-xs text-muted-foreground">
+                  Tamamlanma zamanı için önce kutuyu işaretleyin; ardından buradan tarihi
+                  güncelleyebilirsiniz.
+                </p>
+              )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMilestoneNoteOpen(false)} disabled={savingMilestone}>

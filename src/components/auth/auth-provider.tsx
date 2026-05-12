@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   onAuthStateChanged,
   User,
@@ -8,7 +14,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase";
+import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { ProfileSetupDialog } from "./profile-setup-dialog";
@@ -23,6 +29,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_READY_MS = 12_000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +38,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  /* Firebase yapılandırması yoksa onAuthStateChanged bekleme — sonsuz yükleme olmasın */
   useEffect(() => {
+    if (isFirebaseConfigured) return;
+    setUser(null);
+    setLoading(false);
+    toast.error(
+      "Firebase ortam değişkenleri eksik. .env.local içinde NEXT_PUBLIC_FIREBASE_* değerlerini kontrol edin."
+    );
+  }, []);
+
+  /* Tek sefer abone ol: pathname bağımlılığı dinleyiciyi sürekli koparıp takınca yarış oluşturuyordu */
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
@@ -40,19 +61,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setNeedsProfileSetup(false);
       }
-
-      if (!firebaseUser && pathname !== "/login") {
-        router.push("/login");
-      }
-      if (firebaseUser && pathname === "/login") {
-        router.push("/gorusmeler");
-      }
     });
 
     return () => unsubscribe();
-  }, [pathname, router]);
+  }, []);
+
+  /* Yönlendirme: auth tek abonelik; path değişince burada güncellenir */
+  useEffect(() => {
+    if (loading || !isFirebaseConfigured) return;
+    if (!user && pathname !== "/login") {
+      router.push("/login");
+    }
+    if (user && pathname === "/login") {
+      router.push("/gorusmeler");
+    }
+  }, [user, loading, pathname, router]);
+
+  /* Auth cevabı hiç gelmezse (ağ / engel) sonsuz spinner’ı kır */
+  useEffect(() => {
+    if (!isFirebaseConfigured || !loading) return;
+    const t = window.setTimeout(() => {
+      setLoading((still) => {
+        if (still) {
+          toast.error(
+            "Giriş durumu alınamadı. İnternet, reklam engelleyici veya Firebase ayarlarını kontrol edin."
+          );
+          return false;
+        }
+        return still;
+      });
+    }, AUTH_READY_MS);
+    return () => window.clearTimeout(t);
+  }, [loading]);
 
   const signInWithGoogle = async () => {
+    if (!isFirebaseConfigured) {
+      toast.error("Firebase yapılandırması eksik.");
+      return;
+    }
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
@@ -70,6 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithEmail = async (email: string, password: string) => {
+    if (!isFirebaseConfigured) {
+      toast.error("Firebase yapılandırması eksik.");
+      return;
+    }
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {

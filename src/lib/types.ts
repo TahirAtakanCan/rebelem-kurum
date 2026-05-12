@@ -41,7 +41,7 @@ export type Durum = "Başlamadı" | "Deneyim Başladı" | "Tamamlandı" | "İpta
 export type SatisDurumu = "Satın Aldı" | "Satın Almadı" | "Kararsız" | "Beklemede";
 export type Oncelik = "Yüksek" | "Orta" | "Düşük";
 
-/** Firestore koleksiyon adı sabit kalır (gorusmeler); tek kayıt hem kurum hem legacy görüşme. */
+/** Firestore koleksiyon adı sabit kalır (gorusmeler); tek kayıt kurum kaydıdır. */
 export interface Gorusme {
   id: string;
 

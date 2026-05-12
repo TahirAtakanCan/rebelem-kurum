@@ -21,23 +21,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Plus, Search, MoreVertical, Pencil, Trash2, Download } from "lucide-react";
-import type { Gorusme, KurumDurumu, SatisDurumu } from "@/lib/types";
+import type { Gorusme, KurumDurumu } from "@/lib/types";
 import { subscribeGorusmeler, deleteGorusme } from "@/lib/gorusmeler";
 import {
-  DURUM_RENKLERI,
   ONCELIK_RENKLERI,
   KURUM_TIPI_RENKLERI,
   KURUM_DURUMLARI,
   KURUM_DURUM_RENKLERI,
-  SATIS_DURUMLARI,
 } from "@/lib/constants";
 import { GorusmeDialog } from "@/components/gorusmeler/gorusme-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -54,8 +45,6 @@ import {
 } from "@/lib/kurum-helpers";
 import { exportGorusmelerToCsv } from "@/lib/export-gorusmeler";
 import { gorusmeMatchesSearch } from "@/lib/search";
-
-const SATIS_FILTER_ALL = "all";
 
 function toggleInSet<T>(set: Set<T>, v: T): Set<T> {
   const n = new Set(set);
@@ -79,9 +68,6 @@ export default function GorusmelerPage() {
     new Set()
   );
   const [etiketFilter, setEtiketFilter] = useState<Set<string>>(new Set());
-  const [satisFilter, setSatisFilter] = useState<SatisDurumu | typeof SATIS_FILTER_ALL>(
-    SATIS_FILTER_ALL
-  );
 
   useEffect(() => {
     if (!user) return;
@@ -130,9 +116,6 @@ export default function GorusmelerPage() {
         });
         if (!ok) return false;
       }
-      if (satisFilter !== SATIS_FILTER_ALL) {
-        if (g.satisDurumu !== satisFilter) return false;
-      }
 
       if (!debouncedSearch) return true;
       return gorusmeMatchesSearch(g, debouncedSearch);
@@ -143,7 +126,6 @@ export default function GorusmelerPage() {
     sehirFilter,
     kurumDurumFilter,
     etiketFilter,
-    satisFilter,
   ]);
 
   const handleEdit = (g: Gorusme) => {
@@ -180,7 +162,7 @@ export default function GorusmelerPage() {
     ? "Sonuç bulunamadı"
     : "Henüz kurum eklenmedi. Yukarıdan ilk kaydı oluşturabilirsin.";
 
-  const colspan = 14;
+  const colspan = 13;
 
   return (
     <div className="space-y-6">
@@ -215,7 +197,7 @@ export default function GorusmelerPage() {
               items={[
                 "Satıra tıklayınca kurum detayına gidersin.",
                 "Düzenle/sil işlemleri üç nokta menüsünde.",
-                "Çoklu filtreleri üstteki çiplerle seç; satış filtresi eski kayıtlar içindir.",
+                "Çoklu filtreleri üstteki çiplerle seç.",
                 "Liste CSV ile dışa aktarılabilir.",
               ]}
             />
@@ -311,33 +293,9 @@ export default function GorusmelerPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold uppercase text-muted-foreground">
-              Satış (legacy)
-            </div>
-            <Select
-              value={satisFilter}
-              onValueChange={(v) =>
-                setSatisFilter(v as SatisDurumu | typeof SATIS_FILTER_ALL)
-              }
-            >
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="Satış filtresi" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={SATIS_FILTER_ALL}>Tümü</SelectItem>
-                {SATIS_DURUMLARI.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           {(sehirFilter.size > 0 ||
             kurumDurumFilter.size > 0 ||
-            etiketFilter.size > 0 ||
-            satisFilter !== SATIS_FILTER_ALL) && (
+            etiketFilter.size > 0) && (
             <Button
               type="button"
               variant="ghost"
@@ -346,7 +304,6 @@ export default function GorusmelerPage() {
                 setSehirFilter(new Set());
                 setKurumDurumFilter(new Set());
                 setEtiketFilter(new Set());
-                setSatisFilter(SATIS_FILTER_ALL);
               }}
             >
               Filtreleri temizle
@@ -377,7 +334,6 @@ export default function GorusmelerPage() {
                 <TableHead className="font-semibold text-white">
                   İletişime Geçen
                 </TableHead>
-                <TableHead className="font-semibold text-white">Süreç (eski)</TableHead>
                 <TableHead className="font-semibold text-white">Öncelik</TableHead>
                 <TableHead className="font-semibold text-white">Başlama</TableHead>
                 <TableHead className="font-semibold text-white whitespace-nowrap">
@@ -456,13 +412,6 @@ export default function GorusmelerPage() {
                         )}
                       </TableCell>
                       <TableCell>{g.iletisimeGecen || "-"}</TableCell>
-                      <TableCell>
-                        {g.durum && (
-                          <Badge variant="outline" className={DURUM_RENKLERI[g.durum]}>
-                            {g.durum}
-                          </Badge>
-                        )}
-                      </TableCell>
                       <TableCell>
                         {g.oncelik && (
                           <Badge variant="outline" className={ONCELIK_RENKLERI[g.oncelik]}>
@@ -563,11 +512,6 @@ export default function GorusmelerPage() {
                     <Badge variant="outline" className={KURUM_DURUM_RENKLERI[kd]}>
                       {kd}
                     </Badge>
-                    {g.durum && (
-                      <Badge variant="outline" className={DURUM_RENKLERI[g.durum]}>
-                        {g.durum}
-                      </Badge>
-                    )}
                   </div>
                   <div className="space-y-1 text-sm text-muted-foreground">
                     {g.sehir && <div>{g.sehir}</div>}
